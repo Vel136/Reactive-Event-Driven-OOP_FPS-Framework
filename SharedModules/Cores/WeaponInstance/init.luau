@@ -35,7 +35,12 @@ local Player = game.Players.LocalPlayer
 local BallisticsService = require(Cores.BallisticsService)
 local WeaponAnimator = require(Controllers.WeaponAnimator)
 
--- Gun Class
+--[=[
+	@class WeaponInstance
+	
+	Main Gun orchestrator - NOW FULLY SOLVER-AGNOSTIC
+	Uses BulletContext instead of FastCast objects
+]=]
 local Gun = {}
 Gun.__index = Gun
 
@@ -45,12 +50,13 @@ Gun.Signals = {
 	OnAnyFire = Signal.new(),
 }
 
---[[
+--[=[
 	Creates a new Gun instance
-	@param GunData - Weapon configuration data
-	@param UseAnimator - Whether to use animator (optional)
-	@return Gun instance or nil if invalid
-]]
+	
+	@param GunData WeaponType.GunData -- Weapon configuration data
+	@param UseAnimator boolean? -- Whether to use animator (optional)
+	@return Gun -- Gun instance or nil if invalid
+]=]
 function Gun.new(GunData: WeaponType.GunData, UseAnimator: boolean?): WeaponType.Gun
 	if not IsValidData(GunData) then 
 		Logger.Warn(Identity .. " Invalid GunData provided")
