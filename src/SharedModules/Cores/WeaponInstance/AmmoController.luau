@@ -13,6 +13,15 @@ local Promise = require(Utilities:FindFirstChild("Promise"))
 local Signal = require(Utilities:FindFirstChild("Signal"))
 local Logger = require(Utilities:FindFirstChild("LogService"))
 
+--[=[
+	@class Ammo
+	
+	Main gun orchestrator - fully solver-agnostic.
+	Uses BulletContext instead of FastCast objects for ballistics simulation.
+	
+	This class manages all weapon functionality including firing, reloading, aiming,
+	and state management through specialized controller sub-systems.
+]=]
 local AmmoController = {}
 AmmoController.__index = AmmoController
 
