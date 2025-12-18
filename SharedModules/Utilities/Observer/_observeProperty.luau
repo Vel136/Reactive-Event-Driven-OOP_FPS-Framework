@@ -11,7 +11,7 @@ end
 	An optional `guard` predicate can be supplied to filter which values trigger the observer.
 
 	```lua
-	-- Only observe Name changes when they�re non-empty strings
+	-- Only observe Name changes when they’re non-empty strings
 	local stop = observeProperty(
 		workspace.Model,
 		"Name",
@@ -68,7 +68,7 @@ local function observeProperty(
 		end
 	end
 
-	-- connect to the property-changed signal
+	-- connect to the property‑changed signal
 	propChangedConn = instance:GetPropertyChangedSignal(propertyName):Connect(onPropertyChanged)
 
 	-- fire once on startup

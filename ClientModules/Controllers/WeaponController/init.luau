@@ -23,9 +23,8 @@ local Promise = require(Utilities.Promise)
 local LogService = require(Utilities.LogService)
 local Observer = require(Utilities.Observer)
 local Data = require(script.Data)
-
+local Signal = require(Utilities.Signal)
 -- Weapon Effects
-local WeaponAnimator = require(ReplicatedStorage.ClientModules.Controllers.WeaponAnimator)
 local WeaponSounds = require(ReplicatedStorage.ClientModules.Controllers.WeaponSounds)
 -- Procedural Animations
 local ProcedularAnimations = script.ProcedularAnimations
@@ -103,7 +102,7 @@ local function cleanupCurrentWeapon()
 	if Data.CurrentWeapon then
 		local existingModel = Camera:FindFirstChild(Data.CurrentWeapon)
 		if existingModel then
-			existingModel:Destroy()
+			existingModel.Parent = ReplicatedStorage.Assets.Viewmodels
 		end
 
 		local existingWeapon = Weapons(Data.CurrentWeapon)
@@ -126,17 +125,15 @@ local function equipNewWeapon(weaponName)
 			return
 		end
 
-		local model = gunData.Data.Model:Clone()
-		model.Parent = Camera
-
-		weaponJanitor:Add(model, "Destroy")
-
-		Data.CurrentWeapon = weaponName
-		Data.CurrentViewmodel = model
 		
-		WeaponAnimator.BindWeaponAnimation(gunData)
+		
 		WeaponSounds.BindWeaponSound(gunData)
 		gunData:Equip()
+		
+		local model : Model = gunData.Data.Model
+		model.Parent = Camera
+		Data.CurrentWeapon = weaponName
+		Data.CurrentViewmodel = model
 		
 		weaponJanitor:Add(gunData.Signals.OnShoot:Connect(function()
 			WeaponSway.CameraKick.Kick(1)
@@ -184,7 +181,14 @@ function module.Init()
 	LogService.Print("WeaponController initialized", SCRIPT_NAME)
 end
 
+local lastswitch = os.clock()
+
 function module.SwitchWeapon(weaponName)
+	if os.clock() - lastswitch < .2 then
+		return false 
+	end
+	
+	lastswitch = os.clock()
 	if not weaponName then
 		cleanupCurrentWeapon()
 		WeaponSway.WalkTilt.Reset()

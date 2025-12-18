@@ -3,9 +3,9 @@
 local Logger = {}
 
 local LOG_CONFIGS = {
-	Error = { icon = "??", prefix = "[ERROR]", fn = error },
-	Warn = { icon = "??", prefix = "[WARNING]", fn = warn },
-	Print = { icon = "??", prefix = "[LOG]", fn = print }
+	Error = { icon = "🛑", prefix = "[ERROR]", fn = error },
+	Warn = { icon = "⚠️", prefix = "[WARNING]", fn = warn },
+	Print = { icon = "📃", prefix = "[LOG]", fn = print }
 }
 
 local function formatMessage(config, message, scriptName)

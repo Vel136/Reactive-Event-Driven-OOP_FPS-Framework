@@ -77,7 +77,7 @@ local Data = {
 		Idle = nil,
 		Fire = script:WaitForChild('Anim_Fire'),
 		Reload = script:WaitForChild('Anim_Reload'),
-		Equip = nil,
+		Equip = script:WaitForChild('Anim_Equip'),
 		Sprint = nil,
 		Aim = script:WaitForChild('Anim_Aim'),
 	},

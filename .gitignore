@@ -1,0 +1,14 @@
+.DS_Store
+*.rbxl
+*.rbxl.lock
+*.rbxm
+*.log
+
+# Rojo cache
+.rojo
+
+# Node / tooling (if any)
+node_modules/
+
+# VS Code
+.vscode/

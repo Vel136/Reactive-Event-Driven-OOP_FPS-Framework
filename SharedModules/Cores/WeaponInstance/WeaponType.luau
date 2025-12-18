@@ -9,6 +9,8 @@ local Janitor = require(Utilities.Janitor)
 local Signal = require(Utilities.Signal)
 local Promise = require(Utilities.Promise)
 local ControllerTypes = require(script.Parent.ControllerTypes)
+
+local BulletContext = require(ReplicatedStorage.SharedModules.Cores.BallisticsService.BulletContext)
 export type StateManager = ControllerTypes.StateManager
 export type AmmoController = ControllerTypes.AmmoController
 export type SpreadController = ControllerTypes.SpreadController
@@ -247,7 +249,7 @@ export type Gun = {
 	-- Public Methods
 	CanFire: (self: Gun) -> (boolean, string?),
 	Fire: (self: Gun, origin: Vector3?, direction: Vector3, useHRP_Position: boolean?) -> (boolean, any),
-	FireBullet: (self: Gun, origin: Vector3, direction: Vector3) -> any,
+	FireBullet: (self: Gun, origin: Vector3, direction: Vector3) -> BulletContext.BulletContext,
 	Reload: (self: Gun) -> any, -- Returns Promise
 	SetAiming: (self: Gun, aiming: boolean) -> (),
 	IsAiming: (self: Gun) -> boolean,
@@ -271,8 +273,9 @@ export type Gun = {
 	_FireInternal: (self: Gun, origin: Vector3, direction: Vector3) -> any,
 
 	-- Ballistics Callbacks (can be overridden)
-	_OnBulletHit: (self: Gun, cast: FastCast.ActiveCast, result: RaycastResult, velocity: Vector3, bullet: any) -> (),
-	_OnBulletTravel: (self: Gun, cast: FastCast.ActiveCast, lastPoint: Vector3, direction: Vector3, length: number, velocity: Vector3, bullet: any) -> (),
+	_OnBulletHit: (self: Gun, BulletContext : BulletContext.BulletContext,HitData : RaycastResult) -> (),
+	_OnBulletTravel: (self: Gun, BulletContext : BulletContext.BulletContext) -> (),
+	_OnBulletTerminating: (self: Gun,BulletContext : BulletContext.BulletContext) -> ()
 }
 
 return {GunDataCheck = GunDataCheck}

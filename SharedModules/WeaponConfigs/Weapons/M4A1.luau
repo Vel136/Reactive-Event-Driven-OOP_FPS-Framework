@@ -29,7 +29,7 @@ local Data = {
 	FireMode = "Semi",
 	FireRate = 1200, -- RPM
 	BulletSpeed = 2200,
-	BulletGravity = Vector3.new(0, -workspace.Gravity, 0),
+	BulletGravity = Vector3.new(0,-workspace.Gravity,0),
 
 	Spread = {
 		Base = {
@@ -77,7 +77,8 @@ local Data = {
 		Idle = nil,
 		Fire = nil,
 		Reload = script:WaitForChild('Anim_Reload'),
-		Equip = nil,
+		Equip = script:WaitForChild('Anim_Equip'),
+		Unequip = script:WaitForChild('Anim_Unequip'),
 		Sprint = nil,
 		Aim = nil,
 	},
@@ -107,6 +108,7 @@ local TweenService = game:GetService('TweenService')
 local ReplicatedStorage = game:GetService('ReplicatedStorage')
 local WeaponInstance = require(ReplicatedStorage.SharedModules.Cores.WeaponInstance)
 local InputController = require(ReplicatedStorage.ClientModules.Controllers.InputController)
+local ObjectCache = require(ReplicatedStorage.SharedModules.Utilities.ObjectCache)
 local M4A1 = WeaponInstance.new(Data)
 
 local Camera = workspace.CurrentCamera
@@ -126,15 +128,29 @@ M4A1.Signals.OnAimChanged:Connect(function(IsAiming)
 	end
 end)
 
+local cachedTracers = ObjectCache.new(ReplicatedStorage.Assets.Bullets:WaitForChild('M4A1_Bullet'),30,workspace:WaitForChild('Effects'))
+
+M4A1.Ballistics.Behavior.CosmeticBulletProvider = cachedTracers
+
+function M4A1:_OnBulletTravel(Context)
+	-- Create tracer for this segment
+	local bullet = Context.Bullet
+	bullet.Size = Vector3.new(0.1, 0.1, Context.Length)
+	bullet.CFrame = CFrame.lookAt(Context.LastPoint, Context.LastPoint + Context.Direction) * CFrame.new(0, 0, -Context.Length / 2)
+end
 function M4A1:_FireInternal(origin: Vector3, direction: Vector3)
 	for i = 1,self.Data.PelletCount do
-		task.wait(.04)
 		local finalDir = self.SpreadController:ApplySpread(direction)
 		self:FireBullet(origin, finalDir,true)
+		task.wait(.04)
 	end
 	return true
 end
+function M4A1:_OnBulletTerminating(Context)
+	local bullet = Context.Bullet
 
+	cachedTracers:ReturnPart(bullet)
+end
 function M4A1:_CalculateDamageClient(cast,result : RaycastResult,velocity,bullet)
 	return 0
 end

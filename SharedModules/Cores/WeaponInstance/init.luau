@@ -1,10 +1,7 @@
 -- init.lua (WeaponInstance Main Module)
 --[[
-	Main Gun orchestrator that coordinates all sub-systems:
-	- StateManager: Manages weapon states
-	- AmmoController: Handles ammo and reloading
-	- SpreadController: Manages spread mechanics
-	- DamageCalculator: Calculates damage
+	Main Gun orchestrator - NOW FULLY SOLVER-AGNOSTIC
+	Uses BulletContext instead of FastCast objects
 ]]
 
 local Identity = "[WeaponInstance]"
@@ -13,24 +10,30 @@ local Identity = "[WeaponInstance]"
 local ReplicatedStorage = game:GetService('ReplicatedStorage')
 local RunService = game:GetService('RunService')
 
--- Utilities
+-- References
 local Utilities = ReplicatedStorage.SharedModules.Utilities
+local Cores = ReplicatedStorage.SharedModules.Cores
+local Controllers = ReplicatedStorage.ClientModules.Controllers
+
+-- Utilities-modules
 local FastCast = require(Utilities.FastCastRedux)
-local t = require(Utilities:FindFirstChild("TypeCheck"))
-local Logger = require(Utilities:FindFirstChild("LogService"))
-local Janitor = require(Utilities:FindFirstChild("Janitor"))
-local Signal = require(Utilities:FindFirstChild("Signal"))
+local t = require(Utilities:WaitForChild("TypeCheck"))
+local Logger = require(Utilities:WaitForChild("LogService"))
+local Janitor = require(Utilities:WaitForChild("Janitor"))
+local Signal = require(Utilities:WaitForChild("Signal"))
 
 -- Sub-modules
 local StateManager = require(script.StateManager)
 local AmmoController = require(script.AmmoController)
 local SpreadController = require(script.SpreadController)
 local DamageCalculator = require(script.DamageCalculator)
-
 local WeaponType = require(script.WeaponType)
-local BallisticsService = require(ReplicatedStorage.SharedModules.Cores.BallisticsService)
 
 local Player = game.Players.LocalPlayer
+
+-- Additional Modules
+local BallisticsService = require(Cores.BallisticsService)
+local WeaponAnimator = require(Controllers.WeaponAnimator)
 
 -- Gun Class
 local Gun = {}
@@ -45,9 +48,10 @@ Gun.Signals = {
 --[[
 	Creates a new Gun instance
 	@param GunData - Weapon configuration data
+	@param UseAnimator - Whether to use animator (optional)
 	@return Gun instance or nil if invalid
 ]]
-function Gun.new(GunData: WeaponType.GunData): WeaponType.Gun
+function Gun.new(GunData: WeaponType.GunData, UseAnimator: boolean?): WeaponType.Gun
 	if not IsValidData(GunData) then 
 		Logger.Warn(Identity .. " Invalid GunData provided")
 		return nil 
@@ -67,23 +71,24 @@ function Gun.new(GunData: WeaponType.GunData): WeaponType.Gun
 	self.SpreadController = SpreadController.new(GunData.Spread, self.StateManager)
 	self.DamageCalculator = DamageCalculator.new(GunData.Damage)
 	self.StateManager:SetupObservers()
-	-- Add controllers to janitor
-	self._Janitor:Add(self.StateManager,"Destroy")
-	self._Janitor:Add(self.AmmoController,"Destroy")
-	self._Janitor:Add(self.SpreadController,"Destroy")
-	self._Janitor:Add(self.DamageCalculator,"Destroy")
 
-	-- Ballistics
+	-- Add controllers to janitor
+	self._Janitor:Add(self.StateManager, "Destroy")
+	self._Janitor:Add(self.AmmoController, "Destroy")
+	self._Janitor:Add(self.SpreadController, "Destroy")
+	self._Janitor:Add(self.DamageCalculator, "Destroy")
+
+	-- Ballistics configuration (solver-agnostic)
 	self.Ballistics = {}
 
-	-- Instance Signals (directly reference controller signals where possible)
+	-- Instance Signals
 	self.Signals = {
 		-- Gun-specific signals
 		OnShoot = Signal.new(),
 		OnHit = Signal.new(),
 		OnDestroyed = Signal.new(),
 
-		-- Direct references to controller signals (no forwarding needed!)
+		-- Direct references to controller signals
 		OnReload = self.AmmoController.Signals.OnReload,
 		OnReloadComplete = self.AmmoController.Signals.OnReloadComplete,
 		OnAmmoChanged = self.AmmoController.Signals.OnAmmoChanged,
@@ -93,6 +98,8 @@ function Gun.new(GunData: WeaponType.GunData): WeaponType.Gun
 		OnShootChanged = self.StateManager.Signals.OnShootChanged,
 		OnAimChanged = self.StateManager.Signals.OnAimChanged,
 		OnEquipChanged = self.StateManager.Signals.OnEquipChanged,
+
+		OnEquipCompleted = Signal.new()
 	}
 
 	-- Setup ballistics
@@ -101,11 +108,17 @@ function Gun.new(GunData: WeaponType.GunData): WeaponType.Gun
 	-- Setup cross-controller communication
 	self:_SetupControllerLinks()
 
+	-- Animator setup
+	if not UseAnimator then
+		self.AnimationController = WeaponAnimator.new(self, self.Data.Model)
+	end
+
 	return self
 end
 
 --[[
-	Internal: Sets up FastCast ballistics system
+	Internal: Sets up ballistics configuration (solver-agnostic)
+	This creates behavior config but doesn't depend on FastCast API
 ]]
 function Gun:_SetupBallistics()
 	local behavior = FastCast.newBehavior()
@@ -129,21 +142,12 @@ end
 
 --[[
 	Internal: Sets up cross-controller communication
-	Only needed for controllers that need to react to each other
 ]]
 function Gun:_SetupControllerLinks()
 	-- SpreadController needs to know when aiming changes
 	self._Janitor:Add(self.StateManager.Signals.OnAimChanged:Connect(function(isAiming)
 		self.SpreadController:OnAimChanged(isAiming)
 	end))
-
-	-- SpreadController's internal value changes should be exposed
-	-- (Only if you want OnSpreadChanged signal at Gun level)
-	-- Uncomment if needed:
-	-- self.Signals.OnSpreadChanged = Signal.new()
-	-- self._Janitor:Add(self.SpreadController.CurrentSpread.Changed:Connect(function(newValue)
-	-- 	self.Signals.OnSpreadChanged:Fire(newValue)
-	-- end))
 end
 
 --[[
@@ -228,7 +232,7 @@ end
 	Internal fire logic (can be overridden in subclasses)
 	@param origin - Fire origin
 	@param direction - Fire direction
-	@return any - Fire result
+	@return BulletContext
 ]]
 function Gun:_FireInternal(origin: Vector3, direction: Vector3)
 	local finalDir = self.SpreadController:ApplySpread(direction)
@@ -237,12 +241,13 @@ end
 
 --[[
 	Fires a single bullet using BallisticsService
+	Returns BulletContext 
 	@param origin - Bullet origin
 	@param direction - Bullet direction
-	@return any - Cast object
+	@return BulletContext
 ]]
 function Gun:FireBullet(origin: Vector3, direction: Vector3)
-	local cast = BallisticsService:Fire(
+	local context = BallisticsService:Fire(
 		self,
 		origin,
 		direction,
@@ -250,11 +255,11 @@ function Gun:FireBullet(origin: Vector3, direction: Vector3)
 		self.Ballistics.Behavior
 	)
 
-	-- Fire signals
-	self.Signals.OnShoot:Fire(cast, origin, direction)
-	Gun.Signals.OnAnyFire:Fire(cast, origin, direction)
+	-- Fire signals with context (NOT cast)
+	self.Signals.OnShoot:Fire(context, origin, direction)
+	Gun.Signals.OnAnyFire:Fire(context, origin, direction)
 
-	return cast
+	return context
 end
 
 --[[
@@ -307,36 +312,45 @@ function Gun:SetSpread(amount: number): number
 end
 
 --[[
-	Internal: Handles bullet hit events
-	Override CalculateBonusDamage in DamageCalculator for custom damage
+	Receives BulletContext instead of FastCast objects
+	@param ctx - BulletContext (NOT cast)
+	@param hitData - Solver-agnostic hit information
 ]]
-function Gun:_OnBulletHit(cast: any, result: RaycastResult, velocity: Vector3, bullet: any)
-	if not result then return end
+function Gun:_OnBulletHit(ctx, hitData)
+	if not hitData then return end
 
-	local hitPart = result.Instance
-	local distance = result.Distance
-
-	-- Calculate damage
+	-- Calculate damage using gameplay data (NOT solver objects)
 	local damage = self.DamageCalculator:CalculateTotalDamage(
-		distance,
-		cast,
-		result,
-		velocity,
-		bullet
+		hitData.Distance,
+		ctx,      -- Context contains gameplay data
+		hitData,  -- Solver-agnostic hit info
+		ctx.Velocity,
+		nil       -- No bullet visual object needed
 	)
 
 	-- Fire signals
-	self.Signals.OnHit:Fire(hitPart, damage)
-	Gun.Signals.OnAnyHit:Fire(hitPart, damage)
+	self.Signals.OnHit:Fire(hitData.Instance, damage, ctx)
+	Gun.Signals.OnAnyHit:Fire(hitData.Instance, damage, ctx)
 
-	Logger.Print(Identity .. " Hit: " .. hitPart.Name .. " Damage: " .. damage)
+	Logger.Print(Identity .. " Hit: " .. hitData.Instance.Name .. " Damage: " .. damage)
 end
 
 --[[
-	Override this for custom tracer effects
+	Receives BulletContext with current position/velocity
+	@param ctx - BulletContext (NOT cast)
 ]]
-function Gun:_OnBulletTravel(cast: any, lastPoint: Vector3, direction: Vector3, length: number, velocity: Vector3, bullet: any)
+function Gun:_OnBulletTravel(ctx)
 	-- Override for custom visual effects
+	-- Example: Create tracer using ctx.Position and ctx.Velocity
+	
+end
+
+--[[
+	@param ctx - BulletContext 
+]]
+function Gun:_OnBulletTerminating(ctx)
+	-- Override for custom effects when bullet dies
+
 end
 
 --[[
@@ -364,12 +378,12 @@ end
 function Gun:Destroy()
 	self.Signals.OnDestroyed:Fire()
 
-	-- Clean up only Gun-owned signals (others belong to controllers)
+	-- Clean up only Gun-owned signals
 	self.Signals.OnShoot:Destroy()
 	self.Signals.OnHit:Destroy()
 	self.Signals.OnDestroyed:Destroy()
 
-	-- Clean up janitor (handles all controllers clean up and their signals)
+	-- Clean up janitor (handles all controllers)
 	self._Janitor:Destroy()
 
 	-- Clear references

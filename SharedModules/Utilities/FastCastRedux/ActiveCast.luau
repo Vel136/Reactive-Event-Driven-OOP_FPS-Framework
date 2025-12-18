@@ -351,7 +351,7 @@ local function SimulateCast(cast: ActiveCast, delta: number, expectingShortCall:
 					warn("WARNING: The pierce callback for this cast returned TRUE on Terrain! This can cause severely adverse effects.")
 				end
 				
-				if params.FilterType == Enum.RaycastFilterType.Blacklist then
+				if params.FilterType == Enum.RaycastFilterType.Exclude then
 					-- blacklist
 					-- DO NOT DIRECTLY TABLE.INSERT ON THE PROPERTY
 					local filter = params.FilterDescendantsInstances
@@ -482,13 +482,16 @@ function ActiveCastStatic.new(caster: Caster, origin: Vector3, direction: Vector
 		-- The provider is nil. Use a cosmetic object clone.
 		if cast.RayInfo.CosmeticBulletObject ~= nil then
 			cast.RayInfo.CosmeticBulletObject = cast.RayInfo.CosmeticBulletObject:Clone()
-			cast.RayInfo.CosmeticBulletObject.CFrame = CFrame.new(origin, origin + direction)
+			
 			cast.RayInfo.CosmeticBulletObject.Parent = castDataPacket.CosmeticBulletContainer
+			
+			-- I dont want this initial spawning behavior
+			--cast.RayInfo.CosmeticBulletObject.CFrame = CFrame.new(origin, origin + direction)
 		end
 	else
 		-- The provider is not nil.
 		-- Is it what we want?
-		if typeof(castDataPacket.CosmeticBulletProvider) == "PartCache" then
+		if typeof(castDataPacket.CosmeticBulletProvider) == "ObjectCache" then
 			-- this modded version of typeof is implemented up top.
 			-- Aside from that, yes, it's a part cache. Good to go!
 			
@@ -500,17 +503,19 @@ function ActiveCastStatic.new(caster: Caster, origin: Vector3, direction: Vector
 			end
 
 			cast.RayInfo.CosmeticBulletObject = castDataPacket.CosmeticBulletProvider:GetPart()
-			cast.RayInfo.CosmeticBulletObject.CFrame = CFrame.new(origin, origin + direction)
+				
+			-- I dont want this initial spawning behavior
+			--cast.RayInfo.CosmeticBulletObject.CFrame = CFrame.new(origin, origin + direction)
 			usingProvider = true
 		else
-			warn("FastCastBehavior.CosmeticBulletProvider was not an instance of the PartCache module (an external/separate model)! Are you inputting an instance created via PartCache.new? If so, are you on the latest version of PartCache? Setting FastCastBehavior.CosmeticBulletProvider to nil.")
+			warn("FastCastBehavior.CosmeticBulletProvider was not an instance of the ObjectCache module (an external/separate model)! Are you inputting an instance created via PartCache.new? If so, are you on the latest version of PartCache? Setting FastCastBehavior.CosmeticBulletProvider to nil.")
 			castDataPacket.CosmeticBulletProvider = nil
 		end
 	end
 
 	local targetContainer: Instance;
 	if usingProvider then
-		targetContainer = castDataPacket.CosmeticBulletProvider.CurrentCacheParent
+		targetContainer = castDataPacket.CosmeticBulletProvider.CacheHolder
 	else
 		targetContainer = castDataPacket.CosmeticBulletContainer
 	end
@@ -525,9 +530,9 @@ function ActiveCastStatic.new(caster: Caster, origin: Vector3, direction: Vector
 	
 	local event
 	if RunService:IsClient() then
-		event = RunService.RenderStepped
+		event = RunService.PreSimulation
 	else
-		event = RunService.Heartbeat
+		event = RunService.PostSimulation
 	end
 	
 	setmetatable(cast, ActiveCastStatic)
