@@ -75,19 +75,19 @@ local Data = {
 	-- Animations (AnimationId placeholders)
 	Animations = {
 		Idle = nil,
-		Fire = script:WaitForChild('Anim_Fire'),
-		Reload = script:WaitForChild('Anim_Reload'),
-		Equip = script:WaitForChild('Anim_Equip'),
+		Fire = nil,
+		Reload = nil,
+		Equip = nil,
 		Sprint = nil,
-		Aim = script:WaitForChild('Anim_Aim'),
+		Aim = nil,
 	},
 
 	-- Sounds
 	Sounds = {
-		Fire = script:WaitForChild('Fire'),
+		Fire = nil,
 		Reload = nil,
 		Equip = nil,
-		Empty = script:WaitForChild('Empty'),
+		Empty = nil,
 	},
 
 	-- Special behavior toggles

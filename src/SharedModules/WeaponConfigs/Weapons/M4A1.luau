@@ -76,22 +76,22 @@ local Data = {
 	Animations = {
 		Idle = nil,
 		Fire = nil,
-		Reload = script:WaitForChild('Anim_Reload'),
-		Equip = script:WaitForChild('Anim_Equip'),
-		Unequip = script:WaitForChild('Anim_Unequip'),
+		Reload = nil,
+		Equip = nil,
+		Unequip = nil,
 		Sprint = nil,
 		Aim = nil,
 	},
 
 	-- Sounds
 	Sounds = {
-		Fire = script:WaitForChild('Fire'),
+		Fire = nil,
 		Reload = nil,
 		Equip = nil,
-		Empty = script:WaitForChild('Empty'),
+		Empty = nil,
 		Aim = {
-			In = script:WaitForChild('Aim_In'),
-			Out = script:WaitForChild('Aim_Out'),
+			In = nil,
+			Out = nil,
 		},
 	},
 
@@ -118,15 +118,6 @@ M4A1.Signals.OnEquipChanged:Connect(function(NewState)
 	InputController.SetFireRate(Data.FireRate)
 	InputController.SetFireMode("Semi")
 end)
-M4A1.Signals.OnAimChanged:Connect(function(IsAiming)
-	local Tween = IsAiming and CameraZoom or CameraShrink
-	Tween:Play()
-	
-	local sound = IsAiming and Data.Sounds.Aim.In or Data.Sounds.Aim.Out
-	if not sound.IsPlaying then
-		sound:Play()
-	end
-end)
 
 local cachedTracers = ObjectCache.new(ReplicatedStorage.Assets.Bullets:WaitForChild('M4A1_Bullet'),30,workspace:WaitForChild('Effects'))
 
@@ -139,12 +130,17 @@ function M4A1:_OnBulletTravel(Context)
 	bullet.CFrame = CFrame.lookAt(Context.LastPoint, Context.LastPoint + Context.Direction) * CFrame.new(0, 0, -Context.Length / 2)
 end
 function M4A1:_FireInternal(origin: Vector3, direction: Vector3)
-	for i = 1,self.Data.PelletCount do
-		local finalDir = self.SpreadController:ApplySpread(direction)
-		self:FireBullet(origin, finalDir,true)
+    -- ✅ CORRECT TEST - No artificial delays
+    local before = gcinfo()
+    local start = os.clock()
+    
+    for i = 1, Data.PelletCount do
+        local finalDir = self.SpreadController:ApplySpread(direction)
+		self:FireBullet(origin, finalDir, true)
 		task.wait(.04)
-	end
-	return true
+    end
+ 
+    return true
 end
 function M4A1:_OnBulletTerminating(Context)
 	local bullet = Context.Bullet

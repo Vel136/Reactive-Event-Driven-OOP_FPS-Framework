@@ -10,6 +10,7 @@ local Identity = "[WeaponInstance]"
 local ReplicatedStorage = game:GetService('ReplicatedStorage')
 local RunService = game:GetService('RunService')
 
+
 -- References
 local Utilities = ReplicatedStorage.SharedModules.Utilities
 local Cores = ReplicatedStorage.SharedModules.Cores
@@ -201,7 +202,7 @@ function Gun.new(GunData: WeaponType.GunData, UseAnimator: boolean?): WeaponType
 	self:_SetupControllerLinks()
 
 	-- Animator setup
-	if not UseAnimator then
+	if UseAnimator ~= false then
 		self.AnimationController = WeaponAnimator.new(self, self.Data.Model)
 	end
 
@@ -449,7 +450,6 @@ function Gun:_OnBulletHit(ctx, hitData)
 	-- Fire signals
 	self.Signals.OnHit:Fire(hitData.Instance, damage, ctx)
 	Gun.Signals.OnAnyHit:Fire(hitData.Instance, damage, ctx)
-
 	Logger.Print(Identity .. " Hit: " .. hitData.Instance.Name .. " Damage: " .. damage)
 end
 

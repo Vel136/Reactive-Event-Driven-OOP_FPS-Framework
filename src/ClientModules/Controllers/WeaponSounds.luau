@@ -13,18 +13,7 @@ local Logger = require(ReplicatedStorage.SharedModules.Utilities.LogService)
 local mainJanitor = Janitor.new()
 
 function module.BindWeaponSound(Weapon : WeaponType.Gun)
-	if not Weapon then Logger.Warn("Missing Weapon",SCRIPT_NAME) return false end
-	mainJanitor:Cleanup()
 	
-	local emptyObserver = Weapon.Signals.OnEmpty:Connect(function()
-		SoundService:PlayLocalSound(Weapon.Data.Sounds.Empty)
-	end)
-	
-	local fireConnection = Weapon.Signals.OnShoot:Connect(function()
-		SoundService:PlayLocalSound(Weapon.Data.Sounds.Fire)
-	end)
-	
-	mainJanitor:Add(emptyObserver)
 end
 
 function module.UnbindWeaponSound()

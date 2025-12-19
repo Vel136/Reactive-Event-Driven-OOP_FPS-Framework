@@ -68,9 +68,9 @@ end
 	@param bullet - Bullet part
 	@return number - Total damage
 ]]
-function DamageCalculator:CalculateTotalDamage(distance: number, cast: any?, result: RaycastResult?, velocity: Vector3?, bullet: any?): number
-	local baseDamage = self:CalculateBaseDamage(distance)
-	local bonusDamage = self:CalculateBonusDamage(cast, result, velocity, bullet)
+function DamageCalculator:CalculateTotalDamage(Context): number
+	local baseDamage = 0
+	local bonusDamage = self:CalculateBonusDamage(Context)
 
 	return baseDamage + bonusDamage
 end
@@ -84,7 +84,7 @@ end
 	@param bullet - Bullet part
 	@return number - Bonus damage (default: 0)
 ]]
-function DamageCalculator:CalculateBonusDamage(cast: any?, result: RaycastResult?, velocity: Vector3?, bullet: any?): number
+function DamageCalculator:CalculateBonusDamage(Context): number
 	-- Override in subclasses for custom behavior
 	-- Example: Check if result.Instance.Name == "Head" then return baseDamage * 0.5
 	return 0

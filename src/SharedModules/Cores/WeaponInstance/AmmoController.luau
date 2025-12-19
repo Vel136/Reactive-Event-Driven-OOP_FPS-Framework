@@ -138,6 +138,7 @@ function AmmoController:Reload(): any
 		local cancelled = false
 		onCancel(function()
 			cancelled = true
+			self.LastReloadTime = os.clock() - 2
 			self.StateManager:SetReloading(false)
 			self.ReloadPromise = nil
 		end)

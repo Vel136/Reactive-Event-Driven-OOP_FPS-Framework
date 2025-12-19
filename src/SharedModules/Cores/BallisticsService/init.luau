@@ -35,8 +35,10 @@ end
 function BallisticsService:_Initialize()
 	-- Core FastCast (solver implementation)
 	self.Caster = FastCast.new()
-	self.ActiveBullets = {} -- [context] = cast (reverse lookup for solver cleanup)
-	self.CastToContext = {} -- [cast] = context (forward lookup)
+	-- [context] = cast (reverse lookup for solver cleanup)
+	self.ActiveBullets = setmetatable({}, { __mode = "k" }) -- weak keys (context)
+	-- [cast] = context (forward lookup)
+	self.CastToContext = {} 
 
 	-- Default behavior
 	self.DefaultBehavior = FastCast.newBehavior()

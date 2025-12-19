@@ -148,8 +148,8 @@ export type DamageCalculator = {
 	},
 
 	-- Methods
-	CalculateBaseDamage: (self: DamageCalculator, distance: number) -> number,
-	CalculateTotalDamage: (self: DamageCalculator, distance: number, cast: any?, result: RaycastResult?, velocity: Vector3?, bullet: any?) -> number,
+	CalculateBaseDamage: (self: DamageCalculator, Context : any) -> number,
+	CalculateTotalDamage: (self: DamageCalculator, Context : any) -> number,
 	CalculateBonusDamage: (self: DamageCalculator, cast: any?, result: RaycastResult?, velocity: Vector3?, bullet: any?) -> number,
 	GetDamageAtRange: (self: DamageCalculator, range: number) -> number,
 	GetEffectiveRange: (self: DamageCalculator, minEffectiveDamage: number) -> number,
