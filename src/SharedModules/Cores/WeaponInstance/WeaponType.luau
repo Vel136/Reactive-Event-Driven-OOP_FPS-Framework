@@ -25,7 +25,7 @@ export type SpreadProfile = {
 }
 export type GunData = {
 	Name: string,
-	ID: string,
+	ID: number,
 
 	-- Basic stats
 	Damage : {
@@ -119,7 +119,7 @@ export type GunData = {
 
 local GunDataCheck = TypeCheck.interface({
 	Name = TypeCheck.string,
-	ID = TypeCheck.string,
+	ID = TypeCheck.number,
 	
 	Damage = TypeCheck.interface({
 		Base = TypeCheck.number,
@@ -230,7 +230,7 @@ export type Gun = {
 	-- Signals (mix of Gun-owned and controller references)
 	Signals: {
 		-- Gun-owned signals
-		OnShoot: Signal.Signal,
+		OnFire: Signal.Signal,
 		OnHit: Signal.Signal,
 		OnDestroyed: Signal.Signal,
 
@@ -241,7 +241,7 @@ export type Gun = {
 		OnReserveChanged: Signal.Signal, -- From AmmoController
 		OnEmpty: Signal.Signal, -- From AmmoController
 
-		OnShootChanged: Signal.Signal, -- From StateManager
+		OnFireChanged: Signal.Signal, -- From StateManager
 		OnAimChanged: Signal.Signal, -- From StateManager
 		OnEquipChanged: Signal.Signal, -- From StateManager
 	},

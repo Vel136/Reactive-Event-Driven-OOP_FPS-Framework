@@ -142,7 +142,7 @@ end
 function WeaponAnimator:_BindSignals()
 	-- Fire signal
 	if self.Tracks[Anims.Fire] then
-		self._Janitor:Add(self.Weapon.Signals.OnShoot:Connect(function()
+		self._Janitor:Add(self.Weapon.Signals.OnFire:Connect(function()
 			self:PlayAnimation(Anims.Fire)
 		end))
 	end

@@ -84,8 +84,6 @@ function BulletContext:Terminate()
 	if not self.Alive then return end
 
 	self.Alive = false
-	self.Id = HttpService:GenerateGUID(false)
-
 	-- Ownership
 	self.Weapon = nil
 

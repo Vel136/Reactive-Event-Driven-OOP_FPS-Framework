@@ -9,6 +9,7 @@
 
 local ReplicatedStorage = game:GetService('ReplicatedStorage')
 local Utilities = ReplicatedStorage.SharedModules.Utilities
+
 local Promise = require(Utilities:FindFirstChild("Promise"))
 local Signal = require(Utilities:FindFirstChild("Signal"))
 local Logger = require(Utilities:FindFirstChild("LogService"))
@@ -142,7 +143,7 @@ function AmmoController:Reload(): any
 			self.StateManager:SetReloading(false)
 			self.ReloadPromise = nil
 		end)
-
+		
 		-- Schedule reload completion
 		task.delay(self.Data.ReloadTime or 2, function()
 			if cancelled then return end

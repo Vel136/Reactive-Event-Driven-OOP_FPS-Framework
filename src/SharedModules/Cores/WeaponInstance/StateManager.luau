@@ -6,8 +6,10 @@
 	- Character tracking
 	- State change signals
 ]]
-
+-- Services
 local ReplicatedStorage = game:GetService('ReplicatedStorage')
+
+-- Utilities module
 local Utilities = ReplicatedStorage.SharedModules.Utilities
 local Observer = require(Utilities:FindFirstChild("Observer"))
 local Signal = require(Utilities:FindFirstChild("Signal"))
@@ -51,7 +53,7 @@ function StateManager.new(player)
 	-- Signals
 	self.Signals = {
 		OnAimChanged = Signal.new(),
-		OnShootChanged = Signal.new(),
+		OnFireChanged = Signal.new(),
 		OnEquipChanged = Signal.new(),
 	}
 
@@ -64,7 +66,7 @@ end
 --[[
 	Sets up state observers (call this after controllers are initialized)
 	@param onAimChanged - Callback function for aim state change
-	@param onShootChanged - Callback function for shoot state change
+	@param OnFireChanged - Callback function for shoot state change
 	@param onEquipChanged - Callback function for equip state change
 ]]
 function StateManager:SetupObservers()
@@ -75,13 +77,13 @@ function StateManager:SetupObservers()
 
 	-- Shoot observer
 	local shootObserver = Observer.observeProperty(self.States.Shooting, "Value", function(isShooting)
-		self.Signals.OnShootChanged:Fire(isShooting)
-
+		self.Signals.OnFireChanged:Fire(isShooting)
 	end)
 
 	-- Equip observer
 	local equipObserver = Observer.observeProperty(self.States.Equipped, "Value", function(isEquipped)
 		self.Signals.OnEquipChanged:Fire(isEquipped)
+
 	end)
 
 	-- Add observers to janitor

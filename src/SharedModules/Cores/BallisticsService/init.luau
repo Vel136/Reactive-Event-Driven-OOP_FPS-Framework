@@ -38,7 +38,7 @@ function BallisticsService:_Initialize()
 	-- [context] = cast (reverse lookup for solver cleanup)
 	self.ActiveBullets = setmetatable({}, { __mode = "k" }) -- weak keys (context)
 	-- [cast] = context (forward lookup)
-	self.CastToContext = {} 
+	self.CastToContext = setmetatable({}, { __mode = "k" }) -- weak keys (context)
 
 	-- Default behavior
 	self.DefaultBehavior = FastCast.newBehavior()
@@ -174,6 +174,7 @@ function BallisticsService:Fire(weapon, origin, direction, speed, behavior)
 		SolverData = nil -- Will be populated after cast creation
 	})
 
+	
 	-- Fire using FastCast (solver-specific implementation)
 	local cast = self.Caster:Fire(origin, normalizedDirection, bulletSpeed, castBehavior)
 	

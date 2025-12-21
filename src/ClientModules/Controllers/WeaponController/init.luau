@@ -67,7 +67,7 @@ local function updateViewmodel(dt)
 	WeaponSway.MouseSway.Update()
 	WeaponSway.CameraRotationSway.Update(Camera.CFrame)
 	WeaponSway.CameraKick.Update(dt)
-	local weapon = Weapons(Data.CurrentWeapon)
+	local weapon = Weapons.GetWeaponInstance(Data.CurrentWeapon)
 	
 	
 	if weapon:IsAiming() then
@@ -105,7 +105,7 @@ local function cleanupCurrentWeapon()
 			existingModel.Parent = ReplicatedStorage.Assets.Viewmodels
 		end
 
-		local existingWeapon = Weapons(Data.CurrentWeapon)
+		local existingWeapon = Weapons.GetWeaponInstance(Data.CurrentWeapon)
 		if existingWeapon then
 			pcall(function() existingWeapon:Unequip() end)
 		end
@@ -119,7 +119,7 @@ end
 -- Equip weapon (returns Promise only because of potential async loading)
 local function equipNewWeapon(weaponName)
 	return Promise.new(function(resolve, reject)
-		local gunData = Weapons(weaponName)
+		local gunData = Weapons.GetWeaponInstance(weaponName)
 		if not gunData or not gunData.Data.Model then
 			reject("Invalid weapon: " .. tostring(weaponName))
 			return
@@ -135,7 +135,7 @@ local function equipNewWeapon(weaponName)
 		Data.CurrentWeapon = weaponName
 		Data.CurrentViewmodel = model
 		
-		weaponJanitor:Add(gunData.Signals.OnShoot:Connect(function()
+		weaponJanitor:Add(gunData.Signals.OnFire:Connect(function()
 			WeaponSway.CameraKick.Kick(1)
 		end),"Disconnect")
 		LogService.Print("Equipped: " .. weaponName, SCRIPT_NAME)
@@ -150,7 +150,7 @@ function module.Init()
 	mainJanitor:Add(InputController.Signals.Fire:Connect(function(isFiring)
 		if not isFiring or not Data.CurrentWeapon then return end
 
-		local weapon = Weapons(Data.CurrentWeapon)
+		local weapon = Weapons.GetWeaponInstance(Data.CurrentWeapon)
 		if not weapon or not Data.CurrentPosition then return end
 
 		local origin = Data.CurrentPosition
@@ -161,7 +161,7 @@ function module.Init()
 	
 	-- Reload handler
 	mainJanitor:Add(InputController.Signals.Reload:Connect(function()
-		local weapon = Weapons(Data.CurrentWeapon)
+		local weapon = Weapons.GetWeaponInstance(Data.CurrentWeapon)
 		if not weapon then return end
 
 		weapon:Reload()
@@ -171,7 +171,7 @@ function module.Init()
 	mainJanitor:Add(InputController.Signals.Aim:Connect(function(isAiming)
 		if not Data.CurrentViewmodel then return end
 
-		local weapon = Weapons(Data.CurrentWeapon)
+		local weapon = Weapons.GetWeaponInstance(Data.CurrentWeapon)
 		weapon:SetAiming(isAiming)
 	end),"Disconnect")
 

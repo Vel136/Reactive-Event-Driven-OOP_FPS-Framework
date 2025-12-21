@@ -157,42 +157,53 @@ local Queue: any = {
 
 local SerdesEvent = "?"
 local SerdesThread: thread?
-Events.Reliable[0] = {}
 Queue.Reliable[0] = table.create(256)
-local function WriteEVENT_FireWeapon(Value1: Vector3, Value2: Vector3, Value3: number): ()
-	-- Allocate BLOCK: 26 bytes
-	local BLOCK_START = Allocate(26)
+local function WriteEVENT_FireWeapon(Value1: string, Value2: number, Value3: Vector3, Value4: Vector3): ()
+	-- Allocate BLOCK: 31 bytes
+	local BLOCK_START = Allocate(31)
 	buffer.writeu8(SendBuffer, BLOCK_START + 0, 0)
-	local Vector = Value1
-	buffer.writef32(SendBuffer, BLOCK_START + 1, Vector.X)
-	buffer.writef32(SendBuffer, BLOCK_START + 5, Vector.Y)
-	buffer.writef32(SendBuffer, BLOCK_START + 9, Vector.Z)
-	local Vector = Value2
-	buffer.writef32(SendBuffer, BLOCK_START + 13, Vector.X)
-	buffer.writef32(SendBuffer, BLOCK_START + 17, Vector.Y)
-	buffer.writef32(SendBuffer, BLOCK_START + 21, Vector.Z)
-	buffer.writeu8(SendBuffer, BLOCK_START + 25, Value3)
+	local Length = #Value1
+	buffer.writeu16(SendBuffer, BLOCK_START + 1, Length)
+	Allocate(Length)
+	buffer.writestring(SendBuffer, SendOffset, Value1, Length)
+	buffer.writef32(SendBuffer, BLOCK_START + 3, Value2)
+	local Vector = Value3
+	buffer.writef32(SendBuffer, BLOCK_START + 7, Vector.X)
+	buffer.writef32(SendBuffer, BLOCK_START + 11, Vector.Y)
+	buffer.writef32(SendBuffer, BLOCK_START + 15, Vector.Z)
+	local Vector = Value4
+	buffer.writef32(SendBuffer, BLOCK_START + 19, Vector.X)
+	buffer.writef32(SendBuffer, BLOCK_START + 23, Vector.Y)
+	buffer.writef32(SendBuffer, BLOCK_START + 27, Vector.Z)
 end
 
-local function ReadEVENT_BroadcastHit(): (boolean, Vector3, Vector3, number?)
-	-- Read BLOCK: 26 bytes
-	local BLOCK_START = Read(26)
-	local Value1 = (buffer.readu8(RecieveBuffer, BLOCK_START + 0) == 1)
-	local X = buffer.readf32(RecieveBuffer, BLOCK_START + 1)
-	local Y = buffer.readf32(RecieveBuffer, BLOCK_START + 5)
-	local Z = buffer.readf32(RecieveBuffer, BLOCK_START + 9)
-	local Value2 = Vector3.new(X, Y, Z)
-	X = buffer.readf32(RecieveBuffer, BLOCK_START + 13)
-	Y = buffer.readf32(RecieveBuffer, BLOCK_START + 17)
-	Z = buffer.readf32(RecieveBuffer, BLOCK_START + 21)
-	local Value3 = Vector3.new(X, Y, Z)
-	local Value4
-	if buffer.readu8(RecieveBuffer, BLOCK_START + 25) == 1 then
-		-- Read BLOCK: 4 bytes
-		local BLOCK_START = Read(4)
-		Value4 = buffer.readu32(RecieveBuffer, BLOCK_START + 0)
-	end
-	return Value1, Value2, Value3, Value4
+local function WriteEVENT_ReloadWeapon(Value: string): ()
+	-- Allocate BLOCK: 3 bytes
+	local BLOCK_START = Allocate(3)
+	buffer.writeu8(SendBuffer, BLOCK_START + 0, 1)
+	local Length = #Value
+	buffer.writeu16(SendBuffer, BLOCK_START + 1, Length)
+	Allocate(Length)
+	buffer.writestring(SendBuffer, SendOffset, Value, Length)
+end
+
+local function ReadEVENT_RegisterWeapon(): (number)
+	-- Read BLOCK: 2 bytes
+	local BLOCK_START = Read(2)
+	local Value1 = buffer.readu16(RecieveBuffer, BLOCK_START + 0)
+	return Value1
+end
+
+local function WriteEVENT_ChangeStateWeapon(Value1: string, Value2: number, Value3: boolean): ()
+	-- Allocate BLOCK: 5 bytes
+	local BLOCK_START = Allocate(5)
+	buffer.writeu8(SendBuffer, BLOCK_START + 0, 2)
+	local Length = #Value1
+	buffer.writeu16(SendBuffer, BLOCK_START + 1, Length)
+	Allocate(Length)
+	buffer.writestring(SendBuffer, SendOffset, Value1, Length)
+	buffer.writeu8(SendBuffer, BLOCK_START + 3, Value2)
+	buffer.writeu8(SendBuffer, BLOCK_START + 4, Value3 and 1 or 0)
 end
 
 if not RunService:IsRunning() then
@@ -201,8 +212,14 @@ if not RunService:IsRunning() then
 	FireWeapon = {
 		Fire = NOOP
 	},
-	BroadcastHit = {
+	ReloadWeapon = {
+		Fire = NOOP
+	},
+	RegisterWeapon = {
 		On = NOOP
+	},
+	ChangeStateWeapon = {
+		Fire = NOOP
 	},
 	})
 	return Returns :: BLINK_EVENTS_SYMBOL
@@ -247,16 +264,14 @@ Reliable.OnClientEvent:Connect(function(Buffer: buffer, Instances: {Instance})
 		local BLOCK_START = Read(1)
 		local Index = buffer.readu8(RecieveBuffer, BLOCK_START + 0)
 		if Index == 0 then
-			local Value1: boolean, Value2: Vector3, Value3: Vector3, Value4: number? = ReadEVENT_BroadcastHit()
-			if #Events.Reliable[0] > 0 then
-				for _, Listener in Events.Reliable[0] do
-					task.spawn(Listener, Value1, Value2, Value3, Value4)
-				end
+			local Value1: number = ReadEVENT_RegisterWeapon()
+			if Events.Reliable[0] ~= nil then
+				task.spawn(Events.Reliable[0], Value1)
 			else
 				if #Queue.Reliable[0] > 256 then
-					warn("[Blink]: Event queue of \"BroadcastHit\" exceeded 256, did you forget to implement a listener?")
+					warn("[Blink]: Event queue of \"RegisterWeapon\" exceeded 256, did you forget to implement a listener?")
 				end
-				table.insert(Queue.Reliable[0], {Value1, Value2, Value3, Value4} :: {any})
+				table.insert(Queue.Reliable[0], {Value1} :: {any})
 			end
 		end
 	end
@@ -284,29 +299,50 @@ local Returns = table.freeze({
 	StepReplication = StepReplication,
 
 	FireWeapon = {
-		Fire = function(Value1: Vector3, Value2: Vector3, Value3: number): ()
+		Fire = function(Value1: string, Value2: number, Value3: Vector3, Value4: Vector3): ()
 			local Previous = Save()
 			Load()
-			WriteEVENT_FireWeapon(Value1, Value2, Value3)
+			WriteEVENT_FireWeapon(Value1, Value2, Value3, Value4)
 			local Buffer = buffer.create(SendCursor)
 			buffer.copy(Buffer, 0, SendBuffer, 0, SendCursor)
 			Unreliable:FireServer(Buffer, SendInstances)
 			Load(Previous)
 		end
 	},
-	BroadcastHit = {
-		On = function(Listener: (Value1: boolean, Value2: Vector3, Value3: Vector3, Value4: number?) -> ()): () -> ()
-			table.insert(Events.Reliable[0], Listener)
+	ReloadWeapon = {
+		Fire = function(Value: string): ()
+			local Previous = Save()
+			Load()
+			WriteEVENT_ReloadWeapon(Value)
+			local Buffer = buffer.create(SendCursor)
+			buffer.copy(Buffer, 0, SendBuffer, 0, SendCursor)
+			Unreliable:FireServer(Buffer, SendInstances)
+			Load(Previous)
+		end
+	},
+	RegisterWeapon = {
+		On = function(Listener: (Value1: number) -> ()): () -> ()
+			Events.Reliable[0] = Listener
 			for Index, Arguments in Queue.Reliable[0] do
 				task.spawn(Listener, table.unpack(Arguments))
 			end
 			Queue.Reliable[0] = {}
 			return function (): ()
-				local Index = table.find(Events.Reliable[0], Listener)
-				if Index ~= nil then
-					table.remove(Events.Reliable[0], Index)
+				if Events.Reliable[0] == Listener then
+					Events.Reliable[0] = nil
 				end
 			end
+		end
+	},
+	ChangeStateWeapon = {
+		Fire = function(Value1: string, Value2: number, Value3: boolean): ()
+			local Previous = Save()
+			Load()
+			WriteEVENT_ChangeStateWeapon(Value1, Value2, Value3)
+			local Buffer = buffer.create(SendCursor)
+			buffer.copy(Buffer, 0, SendBuffer, 0, SendCursor)
+			Unreliable:FireServer(Buffer, SendInstances)
+			Load(Previous)
 		end
 	},
 })

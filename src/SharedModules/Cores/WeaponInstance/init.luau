@@ -10,11 +10,13 @@ local Identity = "[WeaponInstance]"
 local ReplicatedStorage = game:GetService('ReplicatedStorage')
 local RunService = game:GetService('RunService')
 
+local NetworkService = require(ReplicatedStorage.SharedModules.Networking.NetworkService)
 
 -- References
 local Utilities = ReplicatedStorage.SharedModules.Utilities
 local Cores = ReplicatedStorage.SharedModules.Cores
 local Controllers = ReplicatedStorage.ClientModules.Controllers
+
 
 -- Utilities-modules
 local FastCast = require(Utilities.FastCastRedux)
@@ -35,7 +37,7 @@ local Player = game.Players.LocalPlayer
 -- Additional Modules
 local BallisticsService = require(Cores.BallisticsService)
 local WeaponAnimator = require(Controllers.WeaponAnimator)
-
+local Configuration = require(ReplicatedStorage.SharedModules.WeaponConfigs.Configuration)
 --[=[
 	@class Gun
 	
@@ -64,14 +66,14 @@ Gun.Signals = {
 	@interface GunSignals
 	@external Signal https://sleitnick.github.io/RbxUtil/api/Signal/
 	@within Gun
-	.OnShoot Signal<BulletContext, Vector3, Vector3> -- Fires when weapon shoots
+	.OnFire Signal<BulletContext, Vector3, Vector3> -- Fires when weapon shoots
 	.OnHit Signal<Instance, number, BulletContext> -- Fires when bullet hits
 	.OnReload Signal<> -- Fires when reload begins
 	.OnReloadComplete Signal<> -- Fires when reload completes
 	.OnAmmoChanged Signal<number> -- Fires when ammo changes
 	.OnReserveChanged Signal<number> -- Fires when reserve ammo changes
 	.OnEmpty Signal<> -- Fires when out of ammo
-	.OnShootChanged Signal<boolean> -- Fires when shooting state changes
+	.OnFireChanged Signal<boolean> -- Fires when shooting state changes
 	.OnAimChanged Signal<boolean> -- Fires when aiming state changes
 	.OnEquipChanged Signal<boolean> -- Fires when equipped state changes
 	.OnEquipCompleted Signal<> -- Fires when equip completes
@@ -177,10 +179,10 @@ function Gun.new(GunData: WeaponType.GunData, UseAnimator: boolean?): WeaponType
 	-- Instance Signals
 	self.Signals = {
 		-- Gun-specific signals
-		OnShoot = Signal.new(),
+		OnFire = Signal.new(),
 		OnHit = Signal.new(),
 		OnDestroyed = Signal.new(),
-
+		OnBulletFire = Signal.new(),
 		-- Direct references to controller signals
 		OnReload = self.AmmoController.Signals.OnReload,
 		OnReloadComplete = self.AmmoController.Signals.OnReloadComplete,
@@ -188,7 +190,7 @@ function Gun.new(GunData: WeaponType.GunData, UseAnimator: boolean?): WeaponType
 		OnReserveChanged = self.AmmoController.Signals.OnReserveChanged,
 		OnEmpty = self.AmmoController.Signals.OnEmpty,
 
-		OnShootChanged = self.StateManager.Signals.OnShootChanged,
+		OnFireChanged = self.StateManager.Signals.OnFireChanged,
 		OnAimChanged = self.StateManager.Signals.OnAimChanged,
 		OnEquipChanged = self.StateManager.Signals.OnEquipChanged,
 
@@ -197,7 +199,9 @@ function Gun.new(GunData: WeaponType.GunData, UseAnimator: boolean?): WeaponType
 
 	-- Setup ballistics
 	self:_SetupBallistics()
-
+	
+	-- Setup networking communication
+	self:_SetupNetworking()
 	-- Setup cross-controller communication
 	self:_SetupControllerLinks()
 
@@ -209,6 +213,25 @@ function Gun.new(GunData: WeaponType.GunData, UseAnimator: boolean?): WeaponType
 	return self
 end
 
+function Gun:_SetupNetworking()
+	self._Janitor:Add(self.Signals.OnBulletFire:Connect(function(origin,direction)
+		NetworkService.FireWeapon(self.Data.Name,os.clock(),origin,direction)
+	end),"Disconnect")
+	
+	self._Janitor:Add(self.Signals.OnReload:Connect(function()
+		NetworkService.ReloadWeapon(self.Data.Name)
+	end),"Disconnect")
+	
+	self._Janitor:Add(self.Signals.OnAimChanged:Connect(function(IsAiming)
+		if not NetworkService.ChangeStateWeapon then Logger.Warn("ChangeStateWeapon doesnt exist in NetworkService",Identity) return false end
+		NetworkService.ChangeStateWeapon(self.Data.Name,Configuration.WeaponStates.Aiming,IsAiming)
+	end),"Disconnect")
+	
+	self._Janitor:Add(self.Signals.OnEquipChanged:Connect(function(IsEquip)
+		if not NetworkService.ChangeStateWeapon then Logger.Warn("ChangeStateWeapon doesnt exist in NetworkService",Identity) return false end
+		NetworkService.ChangeStateWeapon(self.Data.Name,Configuration.WeaponStates.Equip,IsEquip)
+	end),"Disconnect")
+end
 --[=[
 	Sets up ballistics configuration including raycast parameters and physics behavior.
 	
@@ -364,9 +387,9 @@ function Gun:FireBullet(origin: Vector3, direction: Vector3)
 		self.Data.BulletSpeed or 1000,
 		self.Ballistics.Behavior
 	)
-
+	self.Signals.OnBulletFire:Fire(origin,direction)
 	-- Fire signals with context (NOT cast)
-	self.Signals.OnShoot:Fire(context, origin, direction)
+	self.Signals.OnFire:Fire(context, origin, direction)
 	Gun.Signals.OnAnyFire:Fire(context, origin, direction)
 
 	return context
@@ -511,10 +534,10 @@ function Gun:Destroy()
 	self.Signals.OnDestroyed:Fire()
 
 	-- Clean up only Gun-owned signals
-	self.Signals.OnShoot:Destroy()
+	self.Signals.OnFire:Destroy()
 	self.Signals.OnHit:Destroy()
 	self.Signals.OnDestroyed:Destroy()
-
+	self.Signals.OnBulletFire:Destroy()
 	-- Clean up janitor (handles all controllers)
 	self._Janitor:Destroy()
 

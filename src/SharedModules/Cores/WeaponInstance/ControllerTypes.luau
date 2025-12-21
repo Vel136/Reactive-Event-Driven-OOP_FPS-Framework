@@ -26,14 +26,14 @@ export type StateManager = {
 
 	Signals: {
 		OnAimChanged: Signal.Signal,
-		OnShootChanged: Signal.Signal,
+		OnFireChanged: Signal.Signal,
 		OnEquipChanged: Signal.Signal,
 	},
 
 	_Janitor: Janitor.Janitor,
 
 	-- Methods
-	SetupObservers: (self: StateManager, onAimChanged: any?, onShootChanged: any?, onEquipChanged: any?) -> (),
+	SetupObservers: (self: StateManager, onAimChanged: any?, onFireChanged: any?, onEquipChanged: any?) -> (),
 	GetCharacter: (self: StateManager) -> Model?,
 	GetHRP: (self: StateManager) -> BasePart?,
 

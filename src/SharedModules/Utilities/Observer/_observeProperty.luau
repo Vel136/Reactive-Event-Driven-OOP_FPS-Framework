@@ -38,17 +38,18 @@ local function observeProperty(
 	local cleanFn: (() -> ())?
 	local propChangedConn: RBXScriptConnection
 	local changeCounter = 0
-
+	
 	-- decide which guard to use
 	local valueGuard: (value: any) -> boolean = if guard ~= nil then guard else defaultValueGuard
 
 	local function onPropertyChanged()
+		
 		-- run previous cleanup (if any)
 		if cleanFn then
 			task.spawn(cleanFn)
 			cleanFn = nil
 		end
-
+		
 		changeCounter += 1
 		local currentId = changeCounter
 		local newValue = (instance :: any)[propertyName]

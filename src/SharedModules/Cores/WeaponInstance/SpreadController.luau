@@ -1,10 +1,9 @@
 -- SpreadController.lua
 --[[
-	Manages weapon spread mechanics including:
-	- Spread accumulation per shot
-	- Automatic spread recovery
+	CS:GO-style deterministic spread system
+	- Learnable, repeating patterns
+	- Automatic recovery
 	- Aiming vs Base spread profiles
-	- Directional spread application
 ]]
 
 local ReplicatedStorage = game:GetService('ReplicatedStorage')
@@ -12,16 +11,14 @@ local Utilities = ReplicatedStorage.SharedModules.Utilities
 local t = require(Utilities:FindFirstChild("TypeCheck"))
 local Logger = require(Utilities:FindFirstChild("LogService"))
 local Signal = require(Utilities:FindFirstChild("Signal"))
-local Observer = require(Utilities:FindFirstChild('Observer'))
+
 local SpreadController = {}
 SpreadController.__index = SpreadController
 
---[[
-	Creates a new SpreadController
-	@param spreadData - Spread configuration from weapon data
-	@param stateManager - Reference to StateManager for aiming state
-	@return SpreadController instance
-]]
+-- Pattern configuration
+local PATTERN_SIZE = 8
+local GOLDEN_ANGLE = 137.508
+
 function SpreadController.new(spreadData, stateManager)
 	local self = setmetatable({}, SpreadController)
 
@@ -29,26 +26,24 @@ function SpreadController.new(spreadData, stateManager)
 	self.StateManager = stateManager
 
 	-- Tracking
-	self.CurrentSpread = Instance.new("IntValue")
+	self.CurrentSpread = Instance.new("NumberValue")
 	self.CurrentSpread.Value = spreadData.Base.Min
 	self.LastShootTime = 0
+
+	-- Pattern tracking
+	self.ShotIndex = 0
+
 	return self
 end
 
---[[
-	Gets the current spread profile based on aiming state
-	@return table - Current spread profile (Base or Aiming)
-]]
+
 function SpreadController:_GetSpreadProfile()
 	local isAiming = self.StateManager:IsAiming()
 	return isAiming and self.Data.Aiming or self.Data.Base
 end
 
---[[
-	Calculates current spread with automatic recovery
-	@return number - Current spread value in degrees
-]]
-function SpreadController:GetCurrentSpread()
+
+function SpreadController:GetCurrentSpread(): number
 	local profile = self:_GetSpreadProfile()
 	local timeSinceLastShot = os.clock() - self.LastShootTime
 
@@ -67,8 +62,56 @@ function SpreadController:GetCurrentSpread()
 	)
 end
 
+function SpreadController:_GetSeededOffset_CirclePattern(shotIndex: number)
+	-- Distribute evenly on a circle
+	local patternIndex = (shotIndex - 1) % PATTERN_SIZE
+	local angle = math.rad(patternIndex * (360 / PATTERN_SIZE))
+
+	-- All shots at edge of spread cone
+	local radius = 1.0
+
+	local x = math.cos(angle) * radius
+	local y = math.sin(angle) * radius
+
+	return x, y
+end
+
+function SpreadController:_GetSeededOffset_ResetSpiral(shotIndex: number)
+	-- Reset pattern every 8 shots
+	local patternIndex = (shotIndex - 1) % PATTERN_SIZE
+
+	-- Golden angle for even distribution
+	local angle = math.rad(patternIndex * GOLDEN_ANGLE)
+
+	-- Radius grows from 0 to 1 within pattern
+	local radius = patternIndex / PATTERN_SIZE
+
+	local x = math.cos(angle) * radius
+	local y = math.sin(angle) * radius
+
+	return x, y
+end
+
+
+function SpreadController:_GetSeededOffset_InfiniteSpiral(shotIndex: number)
+
+	local angle = math.rad(shotIndex * GOLDEN_ANGLE)
+	local radius = ((shotIndex - 1) % PATTERN_SIZE) / PATTERN_SIZE
+
+	local x = math.cos(angle) * radius
+	local y = math.sin(angle) * radius
+
+	return x, y
+end
+
+function SpreadController:_GetSeededOffset(shotIndex: number)
+	return self:_GetSeededOffset_CirclePattern(shotIndex)
+	-- or: return self:_GetSeededOffset_ResetSpiral(shotIndex)
+	-- or: return self:_GetSeededOffset_InfiniteSpiral(shotIndex)
+end
+
 --[[
-	Applies spread to a direction vector using cone distribution
+	Applies spread to a direction vector
 	@param direction - Base direction vector
 	@return Vector3 - Direction with spread applied
 ]]
@@ -80,10 +123,10 @@ function SpreadController:ApplySpread(direction: Vector3): Vector3
 
 	local profile = self:_GetSpreadProfile()
 
-	-- Get current spread (with automatic recovery)
+	-- Get current spread with recovery
 	local currentSpread = self:GetCurrentSpread()
 
-	-- Increase spread for this shot
+	-- Increase spread for next shot
 	local newSpread = math.clamp(
 		currentSpread + profile.IncreasePerShot,
 		profile.Min,
@@ -93,18 +136,22 @@ function SpreadController:ApplySpread(direction: Vector3): Vector3
 	self.CurrentSpread.Value = newSpread
 	self.LastShootTime = os.clock()
 
-	-- Cone math for random spread within cone
+	-- Increment shot counter
+	self.ShotIndex = self.ShotIndex + 1
+
+	-- Get pattern offset (-1 to 1 range)
+	local offsetX, offsetY = self:_GetSeededOffset(self.ShotIndex)
+
+	-- Replace line 170-171 with:
 	local angleRad = math.rad(newSpread)
-	local cosTheta = math.cos(angleRad)
+	local spreadMagnitude = math.sin(angleRad) -- Better for gameplay feel
+	
+	-- Apply offsets
+	local x = offsetX * spreadMagnitude
+	local y = offsetY * spreadMagnitude
+	local z = -1 -- Forward
 
-	local z = cosTheta + (1 - cosTheta) * math.random()
-	local phi = math.random() * math.pi * 2
-	local sinT = math.sqrt(1 - z * z)
-
-	local x = sinT * math.cos(phi)
-	local y = sinT * math.sin(phi)
-
-	local localDir = Vector3.new(x, y, -z)
+	local localDir = Vector3.new(x, y, z).Unit
 	local rot = CFrame.lookAt(Vector3.zero, direction)
 
 	return rot:VectorToWorldSpace(localDir).Unit
@@ -112,12 +159,10 @@ end
 
 --[[
 	Manually sets spread value
-	@param amount - Spread amount to set
-	@return number - New spread value
 ]]
 function SpreadController:SetSpread(amount: number): number
 	if not t.number(amount) then 
-		Logger.Warn("Invalid spread amount","[SpreadController]")
+		Logger.Warn("Invalid spread amount", "[SpreadController]")
 		return self.CurrentSpread.Value 
 	end
 
@@ -126,20 +171,27 @@ function SpreadController:SetSpread(amount: number): number
 end
 
 --[[
-	Resets spread to minimum (called on aim state change)
-	@param isAiming - New aiming state
+	Resets spread and pattern when aim state changes
 ]]
 function SpreadController:OnAimChanged(isAiming: boolean)
 	local profile = isAiming and self.Data.Aiming or self.Data.Base
 	self.CurrentSpread.Value = profile.Min
-	Logger.Print("Reset spread to: "..self.CurrentSpread.Value,"[SpreadController]")
+	self.ShotIndex = 0 -- Reset pattern
+	Logger.Print("Reset spread to: " .. self.CurrentSpread.Value, "[SpreadController]")
 end
 
 --[[
-	Updates the last shoot time (called externally after firing)
+	Resets pattern (useful for burst weapons)
 ]]
-function SpreadController:UpdateShootTime()
-	self.LastShootTime = os.clock()
+function SpreadController:ResetPattern()
+	self.ShotIndex = 0
+end
+
+--[[
+	Gets shot index for debugging
+]]
+function SpreadController:GetShotIndex(): number
+	return self.ShotIndex
 end
 
 --[[
