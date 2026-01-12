@@ -1,5 +1,4 @@
 --[[
-	Mouse Sway Module
 	Handles camera sway based on mouse movement (position and rotation)
 --]]
 

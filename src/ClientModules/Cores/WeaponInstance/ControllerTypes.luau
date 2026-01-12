@@ -28,6 +28,7 @@ export type StateManager = {
 		OnAimChanged: Signal.Signal,
 		OnFireChanged: Signal.Signal,
 		OnEquipChanged: Signal.Signal,
+		OnReloadChanged: Signal.Signal,
 	},
 
 	_Janitor: Janitor.Janitor,
@@ -48,7 +49,8 @@ export type StateManager = {
 
 	SetEquipped: (self: StateManager, isEquipped: boolean) -> (),
 	IsEquipped: (self: StateManager) -> boolean,
-
+	
+	SetEnabled: (self: StateManager,State : any, Enabled : boolean) -> (),
 	GetAllStates: (self: StateManager) -> {
 		Aiming: boolean,
 		Shooting: boolean,

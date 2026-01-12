@@ -91,6 +91,7 @@ export type CastTrajectory = TypeDefs.CastTrajectory
 export type CastStateInfo = TypeDefs.CastStateInfo
 export type CastRayInfo = TypeDefs.CastRayInfo
 export type ActiveCast = TypeDefs.ActiveCast
+
 -----------------------------------------------------------
 ----------------------- STATIC CODE -----------------------
 -----------------------------------------------------------

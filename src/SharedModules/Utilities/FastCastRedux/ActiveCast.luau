@@ -89,10 +89,14 @@ function DbgVisualizeSegment(castStartCFrame: CFrame, castLength: number): ConeH
 	adornment.Adornee = workspace.Terrain
 	adornment.CFrame = castStartCFrame
 	adornment.Height = castLength
-	adornment.Color3 = Color3.new()
+	adornment.Color3 = Color3.new(1, 0, 0)
 	adornment.Radius = 0.25
 	adornment.Transparency = 0.5
 	adornment.Parent = GetFastCastVisualizationContainer()
+	
+	if RunService:IsServer() then
+		adornment.Color3 = Color3.fromRGB(255, 145, 11)
+	end
 	return adornment
 end
 
@@ -408,7 +412,7 @@ local function SimulateCast(cast: ActiveCast, delta: number, expectingShortCall:
 	end
 	
 	if (cast.StateInfo.DistanceCovered >= cast.RayInfo.MaxDistance) then
-		-- SendRayHit(cast, nil, segmentVelocity, cast.RayInfo.CosmeticBulletObject)
+		SendRayHit(cast, nil, segmentVelocity, cast.RayInfo.CosmeticBulletObject)
 		cast:Terminate()
 		DbgVisualizeHit(CFrame.new(currentTarget), false)
 	end
@@ -482,16 +486,13 @@ function ActiveCastStatic.new(caster: Caster, origin: Vector3, direction: Vector
 		-- The provider is nil. Use a cosmetic object clone.
 		if cast.RayInfo.CosmeticBulletObject ~= nil then
 			cast.RayInfo.CosmeticBulletObject = cast.RayInfo.CosmeticBulletObject:Clone()
-			
+
 			cast.RayInfo.CosmeticBulletObject.Parent = castDataPacket.CosmeticBulletContainer
-			
-			-- I dont want this initial spawning behavior
-			--cast.RayInfo.CosmeticBulletObject.CFrame = CFrame.new(origin, origin + direction)
 		end
 	else
 		-- The provider is not nil.
 		-- Is it what we want?
-		if typeof(castDataPacket.CosmeticBulletProvider) == "ObjectCache" then
+		if typeof(castDataPacket.CosmeticBulletProvider) == "function" then
 			-- this modded version of typeof is implemented up top.
 			-- Aside from that, yes, it's a part cache. Good to go!
 			
@@ -501,24 +502,25 @@ function ActiveCastStatic.new(caster: Caster, origin: Vector3, direction: Vector
 				cast.RayInfo.CosmeticBulletObject = nil
 				castDataPacket.CosmeticBulletTemplate = nil
 			end
-
-			cast.RayInfo.CosmeticBulletObject = castDataPacket.CosmeticBulletProvider:GetPart()
-				
-			-- I dont want this initial spawning behavior
-			--cast.RayInfo.CosmeticBulletObject.CFrame = CFrame.new(origin, origin + direction)
+			local Bullet = castDataPacket.CosmeticBulletProvider()
+			cast.RayInfo.CosmeticBulletObject = Bullet
 			usingProvider = true
 		else
-			warn("FastCastBehavior.CosmeticBulletProvider was not an instance of the ObjectCache module (an external/separate model)! Are you inputting an instance created via PartCache.new? If so, are you on the latest version of PartCache? Setting FastCastBehavior.CosmeticBulletProvider to nil.")
+			warn("FastCastBehavior.CosmeticBulletProvider is not type of function")
 			castDataPacket.CosmeticBulletProvider = nil
 		end
 	end
 
 	local targetContainer: Instance;
 	if usingProvider then
-		targetContainer = castDataPacket.CosmeticBulletProvider.CacheHolder
-	else
-		targetContainer = castDataPacket.CosmeticBulletContainer
+		if not castDataPacket.CosmeticBulletContainer then
+			warn("FastCastBehavior.CosmeticBulletContainer must be provided, workspace are automatically used..")
+			targetContainer = workspace
+		else
+			targetContainer = castDataPacket.CosmeticBulletContainer
+		end
 	end
+	
 	
 	if castDataPacket.AutoIgnoreContainer == true and targetContainer ~= nil then
 		local ignoreList = cast.RayInfo.Parameters.FilterDescendantsInstances
@@ -530,9 +532,9 @@ function ActiveCastStatic.new(caster: Caster, origin: Vector3, direction: Vector
 	
 	local event
 	if RunService:IsClient() then
-		event = RunService.PreSimulation
+		event = RunService.RenderStepped
 	else
-		event = RunService.PostSimulation
+		event = RunService.Heartbeat
 	end
 	
 	setmetatable(cast, ActiveCastStatic)

@@ -1,3 +1,7 @@
+local ReplicatedStorage = game:GetService('ReplicatedStorage')
+local Assets = ReplicatedStorage.Assets
+local Animations = Assets.Animations.M9
+local Sounds = Assets.Sounds.M9
 local Data = {
 	Name = "M9",
 	ID = 1,
@@ -16,7 +20,7 @@ local Data = {
 		},
 		Range = {
 			Min = 0,
-			Max = 100,
+			Max = 800,
 			Dropoff = 0.3, -- lowest 30% damage at max range
 		},
 		Penetration = {
@@ -30,21 +34,21 @@ local Data = {
 	FireRate = 1200, -- RPM
 	BulletSpeed = 1200,
 	BulletGravity = Vector3.new(0, -workspace.Gravity, 0),
-
+	SolverType = "Hitscan",
 	Spread = {
 		Base = {
-			Min = 0,
-			Max = 3,
-			RecoveryTime = 2,
-			IncreasePerShot = 0.6,
-			DecreasePerSecond = 1.0,
+			Min = 0.5, 
+			Max = 8,
+			RecoveryTime = 0.15, 
+			IncreasePerShot = 1.2, 
+			DecreasePerSecond = 4.0,
 		},
 		Aiming = {
-			Min = 0,
-			Max = 2,
-			RecoveryTime = 2,
-			IncreasePerShot = 0.3,
-			DecreasePerSecond = 1.0,
+			Min = 0.1, 
+			Max = 4, 
+			RecoveryTime = 0.1, 
+			IncreasePerShot = 0.6,
+			DecreasePerSecond = 5.0, 
 		},
 	},
 
@@ -71,12 +75,12 @@ local Data = {
 	BarrelAttachment = "Muzzle",
 	AimAttachment = "Aim",
 	ShellEjectAttachment = "Eject",
-	AmmoDeduction = 1,
+
 	-- Animations (AnimationId placeholders)
 	Animations = {
 		Idle = nil,
-		Fire = nil,
-		Reload = nil,
+		Fire = Animations:WaitForChild('Fire'),
+		Reload = Animations:WaitForChild('Reload'),
 		Equip = nil,
 		Sprint = nil,
 		Aim = nil,
@@ -84,7 +88,7 @@ local Data = {
 
 	-- Sounds
 	Sounds = {
-		Fire = nil,
+		Fire = Sounds:WaitForChild('Fire'),
 		Reload = nil,
 		Equip = nil,
 		Empty = nil,

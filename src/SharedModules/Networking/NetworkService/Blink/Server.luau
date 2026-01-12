@@ -158,24 +158,44 @@ local Queue: any = {
 
 local SerdesEvent = "?"
 local SerdesThread: thread?
-Queue.Unreliable[0] = table.create(256)
 Queue.Unreliable[1] = table.create(256)
 Queue.Unreliable[2] = table.create(256)
-local function ReadEVENT_FireWeapon(): (string, number, Vector3, Vector3)
-	-- Read BLOCK: 30 bytes
-	local BLOCK_START = Read(30)
+Queue.Unreliable[3] = table.create(256)
+export type FireData = { Origin: Vector3, Direction: Vector3, Time: number, ShotIndex: number, LastShootTime: number }
+local function WriteEVENT_FireSound(Value1: Vector3, Value2: Vector3, Value3: number, Value4: number): ()
+	-- Allocate BLOCK: 29 bytes
+	local BLOCK_START = Allocate(29)
+	buffer.writeu8(SendBuffer, BLOCK_START + 0, 0)
+	local Vector = Value1
+	buffer.writef32(SendBuffer, BLOCK_START + 1, Vector.X)
+	buffer.writef32(SendBuffer, BLOCK_START + 5, Vector.Y)
+	buffer.writef32(SendBuffer, BLOCK_START + 9, Vector.Z)
+	local Vector = Value2
+	buffer.writef32(SendBuffer, BLOCK_START + 13, Vector.X)
+	buffer.writef32(SendBuffer, BLOCK_START + 17, Vector.Y)
+	buffer.writef32(SendBuffer, BLOCK_START + 21, Vector.Z)
+	buffer.writeu16(SendBuffer, BLOCK_START + 25, Value3)
+	buffer.writeu16(SendBuffer, BLOCK_START + 27, Value4)
+end
+
+local function ReadEVENT_FireWeapon(): (string, { Origin: Vector3, Direction: Vector3, Time: number, ShotIndex: number, LastShootTime: number })
+	-- Read BLOCK: 36 bytes
+	local BLOCK_START = Read(36)
 	local Length = buffer.readu16(RecieveBuffer, BLOCK_START + 0)
 	local Value1 = buffer.readstring(RecieveBuffer, Read(Length), Length)
-	local Value2 = buffer.readf32(RecieveBuffer, BLOCK_START + 2)
-	local X = buffer.readf32(RecieveBuffer, BLOCK_START + 6)
-	local Y = buffer.readf32(RecieveBuffer, BLOCK_START + 10)
-	local Z = buffer.readf32(RecieveBuffer, BLOCK_START + 14)
-	local Value3 = Vector3.new(X, Y, Z)
-	X = buffer.readf32(RecieveBuffer, BLOCK_START + 18)
-	Y = buffer.readf32(RecieveBuffer, BLOCK_START + 22)
-	Z = buffer.readf32(RecieveBuffer, BLOCK_START + 26)
-	local Value4 = Vector3.new(X, Y, Z)
-	return Value1, Value2, Value3, Value4
+	local Value2 = {} :: any
+	local X = buffer.readf32(RecieveBuffer, BLOCK_START + 2)
+	local Y = buffer.readf32(RecieveBuffer, BLOCK_START + 6)
+	local Z = buffer.readf32(RecieveBuffer, BLOCK_START + 10)
+	Value2.Origin = Vector3.new(X, Y, Z)
+	X = buffer.readf32(RecieveBuffer, BLOCK_START + 14)
+	Y = buffer.readf32(RecieveBuffer, BLOCK_START + 18)
+	Z = buffer.readf32(RecieveBuffer, BLOCK_START + 22)
+	Value2.Direction = Vector3.new(X, Y, Z)
+	Value2.Time = buffer.readf32(RecieveBuffer, BLOCK_START + 26)
+	Value2.ShotIndex = buffer.readu16(RecieveBuffer, BLOCK_START + 30)
+	Value2.LastShootTime = buffer.readf32(RecieveBuffer, BLOCK_START + 32)
+	return Value1, Value2
 end
 
 local function ReadEVENT_ReloadWeapon(): (string)
@@ -186,10 +206,22 @@ local function ReadEVENT_ReloadWeapon(): (string)
 	return Value
 end
 
+local function WriteEVENT_SyncEventState(Value1: string, Value2: number, Value3: number): ()
+	-- Allocate BLOCK: 6 bytes
+	local BLOCK_START = Allocate(6)
+	buffer.writeu8(SendBuffer, BLOCK_START + 0, 0)
+	local Length = #Value1
+	buffer.writeu16(SendBuffer, BLOCK_START + 1, Length)
+	Allocate(Length)
+	buffer.writestring(SendBuffer, SendOffset, Value1, Length)
+	buffer.writeu8(SendBuffer, BLOCK_START + 3, Value2)
+	buffer.writeu16(SendBuffer, BLOCK_START + 4, Value3)
+end
+
 local function WriteEVENT_RegisterWeapon(Value1: number): ()
 	-- Allocate BLOCK: 3 bytes
 	local BLOCK_START = Allocate(3)
-	buffer.writeu8(SendBuffer, BLOCK_START + 0, 0)
+	buffer.writeu8(SendBuffer, BLOCK_START + 0, 1)
 	buffer.writeu16(SendBuffer, BLOCK_START + 1, Value1)
 end
 
@@ -206,11 +238,23 @@ end
 if not RunService:IsRunning() then
 	local NOOP = function() end
 	local Returns = table.freeze({
+	FireSound = {
+		Fire = NOOP,
+		FireAll = NOOP,
+		FireList = NOOP,
+		FireExcept = NOOP
+	},
 	FireWeapon = {
 		On = NOOP
 	},
 	ReloadWeapon = {
 		On = NOOP
+	},
+	SyncEventState = {
+		Fire = NOOP,
+		FireAll = NOOP,
+		FireList = NOOP,
+		FireExcept = NOOP
 	},
 	RegisterWeapon = {
 		Fire = NOOP,
@@ -300,20 +344,20 @@ Unreliable.OnServerEvent:Connect(function(Player: Player, Buffer: buffer, Instan
 		-- Read BLOCK: 1 bytes
 		local BLOCK_START = Read(1)
 		local Index = buffer.readu8(RecieveBuffer, BLOCK_START + 0)
-		if Index == 0 then
-			local Value1: string, Value2: number, Value3: Vector3, Value4: Vector3 = ReadEVENT_FireWeapon()
-			if Events.Unreliable[0] ~= nil then
-				task.spawn(Events.Unreliable[0], Player, Value1, Value2, Value3, Value4)
-			end
-		elseif Index == 1 then
-			local Value: string = ReadEVENT_ReloadWeapon()
+		if Index == 1 then
+			local Value1: string, Value2: { Origin: Vector3, Direction: Vector3, Time: number, ShotIndex: number, LastShootTime: number } = ReadEVENT_FireWeapon()
 			if Events.Unreliable[1] ~= nil then
-				task.spawn(Events.Unreliable[1], Player, Value)
+				task.spawn(Events.Unreliable[1], Player, Value1, Value2)
 			end
 		elseif Index == 2 then
-			local Value1: string, Value2: number, Value3: boolean = ReadEVENT_ChangeStateWeapon()
+			local Value: string = ReadEVENT_ReloadWeapon()
 			if Events.Unreliable[2] ~= nil then
-				task.spawn(Events.Unreliable[2], Player, Value1, Value2, Value3)
+				task.spawn(Events.Unreliable[2], Player, Value)
+			end
+		elseif Index == 3 then
+			local Value1: string, Value2: number, Value3: boolean = ReadEVENT_ChangeStateWeapon()
+			if Events.Unreliable[3] ~= nil then
+				task.spawn(Events.Unreliable[3], Player, Value1, Value2, Value3)
 			end
 		end
 	end
@@ -323,18 +367,45 @@ end)
 local Returns = table.freeze({
 	StepReplication = StepReplication,
 
-	FireWeapon = {
-		On = function(Listener: (Player: Player, Value1: string, Value2: number, Value3: Vector3, Value4: Vector3) -> ()): () -> ()
-			Events.Unreliable[0] = Listener
-			return function (): ()
-				if Events.Unreliable[0] == Listener then
-					Events.Unreliable[0] = nil
-				end
+	FireSound = {
+		Fire = function(Player: Player, Value1: Vector3, Value2: Vector3, Value3: number, Value4: number): ()
+			Load()
+			WriteEVENT_FireSound(Value1, Value2, Value3, Value4)
+			local Buffer = buffer.create(SendCursor)
+			buffer.copy(Buffer, 0, SendBuffer, 0, SendCursor)
+			Unreliable:FireClient(Player, Buffer, SendInstances)
+		end,
+		FireAll = function(Value1: Vector3, Value2: Vector3, Value3: number, Value4: number): ()
+			Load()
+			WriteEVENT_FireSound(Value1, Value2, Value3, Value4)
+			local Buffer = buffer.create(SendCursor)
+			buffer.copy(Buffer, 0, SendBuffer, 0, SendCursor)
+			Unreliable:FireAllClients(Buffer, SendInstances)
+		end,
+		FireList = function(List: {Player}, Value1: Vector3, Value2: Vector3, Value3: number, Value4: number): ()
+			Load()
+			WriteEVENT_FireSound(Value1, Value2, Value3, Value4)
+			local Buffer = buffer.create(SendCursor)
+			buffer.copy(Buffer, 0, SendBuffer, 0, SendCursor)
+			for _, Player in List do
+				Unreliable:FireClient(Player, Buffer, SendInstances)
 			end
-		end
+		end,
+		FireExcept = function(Except: Player, Value1: Vector3, Value2: Vector3, Value3: number, Value4: number): ()
+			Load()
+			WriteEVENT_FireSound(Value1, Value2, Value3, Value4)
+			local Buffer = buffer.create(SendCursor)
+			buffer.copy(Buffer, 0, SendBuffer, 0, SendCursor)
+			for _, Player in Players:GetPlayers() do
+				if Player == Except then
+					continue
+				end
+				Unreliable:FireClient(Player, Buffer, SendInstances)
+			end
+		end,
 	},
-	ReloadWeapon = {
-		On = function(Listener: (Player: Player, Value: string) -> ()): () -> ()
+	FireWeapon = {
+		On = function(Listener: (Player: Player, Value1: string, Value2: { Origin: Vector3, Direction: Vector3, Time: number, ShotIndex: number, LastShootTime: number }) -> ()): () -> ()
 			Events.Unreliable[1] = Listener
 			return function (): ()
 				if Events.Unreliable[1] == Listener then
@@ -342,6 +413,62 @@ local Returns = table.freeze({
 				end
 			end
 		end
+	},
+	ReloadWeapon = {
+		On = function(Listener: (Player: Player, Value: string) -> ()): () -> ()
+			Events.Unreliable[2] = Listener
+			return function (): ()
+				if Events.Unreliable[2] == Listener then
+					Events.Unreliable[2] = nil
+				end
+			end
+		end
+	},
+	SyncEventState = {
+		Fire = function(Player: Player, Value1: string, Value2: number, Value3: number): ()
+			Load(PlayersMap[Player])
+			WriteEVENT_SyncEventState(Value1, Value2, Value3)
+			PlayersMap[Player] = Save()
+		end,
+		FireAll = function(Value1: string, Value2: number, Value3: number): ()
+			Load()
+			WriteEVENT_SyncEventState(Value1, Value2, Value3)
+			local Buffer, Size, Instances = SendBuffer, SendCursor, SendInstances
+			for _, Player in Players:GetPlayers() do
+				Load(PlayersMap[Player])
+				local Position = Allocate(Size)
+				buffer.copy(SendBuffer, Position, Buffer, 0, Size)
+				table.move(Instances, 1, #Instances, #SendInstances + 1, SendInstances)
+				PlayersMap[Player] = Save()
+			end
+		end,
+		FireList = function(List: {Player}, Value1: string, Value2: number, Value3: number): ()
+			Load()
+			WriteEVENT_SyncEventState(Value1, Value2, Value3)
+			local Buffer, Size, Instances = SendBuffer, SendCursor, SendInstances
+			for _, Player in List do
+				Load(PlayersMap[Player])
+				local Position = Allocate(Size)
+				buffer.copy(SendBuffer, Position, Buffer, 0, Size)
+				table.move(Instances, 1, #Instances, #SendInstances + 1, SendInstances)
+				PlayersMap[Player] = Save()
+			end
+		end,
+		FireExcept = function(Except: Player, Value1: string, Value2: number, Value3: number): ()
+			Load()
+			WriteEVENT_SyncEventState(Value1, Value2, Value3)
+			local Buffer, Size, Instances = SendBuffer, SendCursor, SendInstances
+			for _, Player in Players:GetPlayers() do
+				if Player == Except then
+					continue
+				end
+				Load(PlayersMap[Player])
+				local Position = Allocate(Size)
+				buffer.copy(SendBuffer, Position, Buffer, 0, Size)
+				table.move(Instances, 1, #Instances, #SendInstances + 1, SendInstances)
+				PlayersMap[Player] = Save()
+			end
+		end,
 	},
 	RegisterWeapon = {
 		Fire = function(Player: Player, Value1: number): ()
@@ -391,10 +518,10 @@ local Returns = table.freeze({
 	},
 	ChangeStateWeapon = {
 		On = function(Listener: (Player: Player, Value1: string, Value2: number, Value3: boolean) -> ()): () -> ()
-			Events.Unreliable[2] = Listener
+			Events.Unreliable[3] = Listener
 			return function (): ()
-				if Events.Unreliable[2] == Listener then
-					Events.Unreliable[2] = nil
+				if Events.Unreliable[3] == Listener then
+					Events.Unreliable[3] = nil
 				end
 			end
 		end

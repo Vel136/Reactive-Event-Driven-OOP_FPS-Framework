@@ -201,12 +201,21 @@ end
 	Adds ammo to reserve
 	@param amount - Amount to add
 ]]
-function AmmoController:AddReserve(amount: number)
+function AmmoController:SetReserve(amount: number)
 	local oldValue = self.Reserve.Value
-	self.Reserve.Value += amount
+	self.Reserve.Value = amount
 	self.Signals.OnReserveChanged:Fire(self.Reserve.Value, oldValue)
 end
 
+--[[
+	Adds ammo
+	@param amount - Amount to add
+]]
+function AmmoController:SetAmmo(amount: number)
+	local oldValue = self.Ammo.Value
+	self.Ammo.Value = amount
+	self.Signals.OnAmmoChanged:Fire(self.Ammo.Value, oldValue)
+end
 --[[
 	Cleanup
 ]]

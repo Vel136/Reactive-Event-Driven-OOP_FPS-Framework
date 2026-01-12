@@ -16,9 +16,22 @@ local Signal = require(Utilities:FindFirstChild("Signal"))
 local Janitor = require(Utilities:FindFirstChild("Janitor"))
 local Logger = require(Utilities:FindFirstChild("LogService"))
 
+-- Configurations
+local Configuration = require(ReplicatedStorage.SharedModules.WeaponConfigs.Configuration)
+local States = Configuration.WeaponStates
 local StateManager = {}
 StateManager.__index = StateManager
 
+
+--[[
+	StateName = Enum
+]]
+StateManager.States = States
+StateManager.Enums = {}
+-- Reverse StateName to StateEnum
+for StateName,StateEnum in pairs(States) do
+	StateManager.Enums[StateEnum] = StateName
+end
 --[[
 	Creates a new StateManager
 	@param player - The player who owns this weapon
@@ -35,10 +48,10 @@ function StateManager.new(player)
 
 	-- State ValueObjects
 	self.States = {
-		Aiming = Instance.new("BoolValue"),
-		Shooting = Instance.new("BoolValue"),
-		Reloading = Instance.new("BoolValue"),
-		Equipped = Instance.new("BoolValue"),
+		[States.Aim] = Instance.new("BoolValue"),
+		[States.Shoot] = Instance.new("BoolValue"),
+		[States.Reload] = Instance.new("BoolValue"),
+		[States.Equip] = Instance.new("BoolValue"),
 	}
 
 	-- Add states to janitor
@@ -55,6 +68,7 @@ function StateManager.new(player)
 		OnAimChanged = Signal.new(),
 		OnFireChanged = Signal.new(),
 		OnEquipChanged = Signal.new(),
+		OnReloadChanged = Signal.new(),
 	}
 
 	-- Track character
@@ -71,25 +85,30 @@ end
 ]]
 function StateManager:SetupObservers()
 	-- Aim observer
-	local aimObserver = Observer.observeProperty(self.States.Aiming, "Value", function(isAiming)
+	local aimObserver = Observer.observeProperty(self.States[States.Aim], "Value", function(isAiming)
 		self.Signals.OnAimChanged:Fire(isAiming)
 	end)
 
 	-- Shoot observer
-	local shootObserver = Observer.observeProperty(self.States.Shooting, "Value", function(isShooting)
+	local shootObserver = Observer.observeProperty(self.States[States.Shoot], "Value", function(isShooting)
 		self.Signals.OnFireChanged:Fire(isShooting)
 	end)
 
 	-- Equip observer
-	local equipObserver = Observer.observeProperty(self.States.Equipped, "Value", function(isEquipped)
+	local equipObserver = Observer.observeProperty(self.States[States.Equip], "Value", function(isEquipped)
 		self.Signals.OnEquipChanged:Fire(isEquipped)
 
 	end)
-
+	
+	local reloadObserver = Observer.observeProperty(self.States[States.Reload],"Value",function(isReloading)
+		self.Signals.OnReloadChanged:Fire(isReloading)
+	end)
+	
 	-- Add observers to janitor
 	self._Janitor:Add(aimObserver)
 	self._Janitor:Add(shootObserver)
 	self._Janitor:Add(equipObserver)
+	self._Janitor:Add(reloadObserver)
 end
 
 --[[
@@ -132,8 +151,8 @@ end
 	@param isAiming - New aiming state
 ]]
 function StateManager:SetAiming(isAiming: boolean)
-	if self.States.Aiming.Value == isAiming then return end
-	self.States.Aiming.Value = isAiming
+	if self.States[States.Aim].Value == isAiming then return end
+	self.States[States.Aim].Value = isAiming
 	self.LastAimTime = os.clock()
 end
 
@@ -142,7 +161,7 @@ end
 	@return boolean - Is aiming
 ]]
 function StateManager:IsAiming(): boolean
-	return self.States.Aiming.Value
+	return self.States[States.Aim].Value
 end
 
 --[[
@@ -150,7 +169,7 @@ end
 	@param isShooting - New shooting state
 ]]
 function StateManager:SetShooting(isShooting: boolean)
-	self.States.Shooting.Value = isShooting
+	self.States[States.Shoot].Value = isShooting
 	if isShooting then
 		self.LastShootTime = os.clock()
 	end
@@ -161,7 +180,7 @@ end
 	@return boolean - Is shooting
 ]]
 function StateManager:IsShooting(): boolean
-	return self.States.Shooting.Value
+	return self.States[States.Shoot].Value
 end
 
 --[[
@@ -169,7 +188,7 @@ end
 	@param isReloading - New reloading state
 ]]
 function StateManager:SetReloading(isReloading: boolean)
-	self.States.Reloading.Value = isReloading
+	self.States[States.Reload].Value = isReloading
 end
 
 --[[
@@ -177,7 +196,7 @@ end
 	@return boolean - Is reloading
 ]]
 function StateManager:IsReloading(): boolean
-	return self.States.Reloading.Value
+	return self.States[States.Reload].Value
 end
 
 --[[
@@ -185,7 +204,7 @@ end
 	@param isEquipped - New equipped state
 ]]
 function StateManager:SetEquipped(isEquipped: boolean)
-	self.States.Equipped.Value = isEquipped
+	self.States[States.Equip].Value = isEquipped
 end
 
 --[[
@@ -193,19 +212,29 @@ end
 	@return boolean - Is equipped
 ]]
 function StateManager:IsEquipped(): boolean
-	return self.States.Equipped.Value
+	return self.States[States.Equip].Value
 end
 
 --[[
 	Gets all current states
 	@return table - All state values
 ]]
+function StateManager:SetEnabled(StateEnum,Enabled)
+	if not StateManager.Enums[StateEnum] then return false end
+	
+	local StateName = StateManager.Enums[StateEnum]
+	self.States[States[StateName]].Value = Enabled
+end
+--[[
+	Gets all current states
+	@return table - All state values
+]]
 function StateManager:GetAllStates()
 	return {
-		Aiming = self.States.Aiming.Value,
-		Shooting = self.States.Shooting.Value,
-		Reloading = self.States.Reloading.Value,
-		Equipped = self.States.Equipped.Value,
+		Aiming = self.States[States.Aim].Value,
+		Shooting = self.States[States.Shoot].Value,
+		Reloading = self.States[States.Reload].Value,
+		Equipped = self.States[States.Equip].Value,
 	}
 end
 

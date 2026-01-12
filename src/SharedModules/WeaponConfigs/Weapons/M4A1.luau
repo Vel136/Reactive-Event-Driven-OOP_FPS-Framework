@@ -2,7 +2,7 @@
 local TweenService = game:GetService('TweenService')
 local ReplicatedStorage = game:GetService('ReplicatedStorage')
 
-local WeaponInstance = require(ReplicatedStorage.SharedModules.Cores.WeaponInstance)
+local WeaponInstance = require(ReplicatedStorage.ClientModules.Cores.WeaponInstance)
 local InputController = require(ReplicatedStorage.ClientModules.Controllers.InputController)
 local ObjectCache = require(ReplicatedStorage.SharedModules.Utilities.ObjectCache)
 
@@ -20,32 +20,33 @@ local M4A1 = WeaponInstance.new(WeaponData)
 
 M4A1.Signals.OnEquipChanged:Connect(function(NewState)
 	InputController.SetFireRate(WeaponData.FireRate)
-	InputController.SetFireMode("Semi")
+	InputController.SetFireMode(WeaponData.FireMode)
 end)
-
+M4A1.Ballistics.Behavior.CosmeticBulletContainer = workspace:WaitForChild('Effects')
 local cachedTracers = ObjectCache.new(ReplicatedStorage.Assets.Bullets:WaitForChild('M4A1_Bullet'),30,workspace:WaitForChild('Effects'))
 
-M4A1.Ballistics.Behavior.CosmeticBulletProvider = cachedTracers
+M4A1.Ballistics.Behavior.CosmeticBulletProvider = function()
+	return cachedTracers:GetPart()
+end
 
 function M4A1:_OnBulletTravel(Context)
-	-- Create tracer for this segment
 	local bullet = Context.Bullet
+	if not bullet then return false end
+	
+	bullet.Size = Vector3.new(0.1, 0.1, Context.Length)
+
 	bullet.Size = Vector3.new(0.1, 0.1, Context.Length)
 	bullet.CFrame = CFrame.lookAt(Context.LastPoint, Context.LastPoint + Context.Direction) * CFrame.new(0, 0, -Context.Length / 2)
 end
-function M4A1:_FireInternal(origin: Vector3, direction: Vector3)
-
-    for i = 1, WeaponData.PelletCount do
-        local finalDir = self.SpreadController:ApplySpread(direction)
-		self:FireBullet(origin, finalDir, true)
-		task.wait(.04)
-    end
- 
-    return true
-end
+M4A1.Signals.OnFire:Connect(function(Origin,Direction)
+	if M4A1.Data.Sounds.Fire then
+		M4A1.Data.Sounds.Fire:Play()
+	end
+end)
 function M4A1:_OnBulletTerminating(Context)
 	local bullet = Context.Bullet
-
+	if not bullet then return false end
+	
 	cachedTracers:ReturnPart(bullet)
 end
 function M4A1:_CalculateDamageClient(cast,result : RaycastResult,velocity,bullet)

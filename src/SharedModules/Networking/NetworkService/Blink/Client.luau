@@ -157,34 +157,65 @@ local Queue: any = {
 
 local SerdesEvent = "?"
 local SerdesThread: thread?
+Queue.Unreliable[0] = table.create(256)
 Queue.Reliable[0] = table.create(256)
-local function WriteEVENT_FireWeapon(Value1: string, Value2: number, Value3: Vector3, Value4: Vector3): ()
-	-- Allocate BLOCK: 31 bytes
-	local BLOCK_START = Allocate(31)
-	buffer.writeu8(SendBuffer, BLOCK_START + 0, 0)
+Queue.Reliable[1] = table.create(256)
+export type FireData = { Origin: Vector3, Direction: Vector3, Time: number, ShotIndex: number, LastShootTime: number }
+local function ReadEVENT_FireSound(): (Vector3, Vector3, number, number)
+	-- Read BLOCK: 28 bytes
+	local BLOCK_START = Read(28)
+	local X = buffer.readf32(RecieveBuffer, BLOCK_START + 0)
+	local Y = buffer.readf32(RecieveBuffer, BLOCK_START + 4)
+	local Z = buffer.readf32(RecieveBuffer, BLOCK_START + 8)
+	local Value1 = Vector3.new(X, Y, Z)
+	X = buffer.readf32(RecieveBuffer, BLOCK_START + 12)
+	Y = buffer.readf32(RecieveBuffer, BLOCK_START + 16)
+	Z = buffer.readf32(RecieveBuffer, BLOCK_START + 20)
+	local Value2 = Vector3.new(X, Y, Z)
+	local Value3 = buffer.readu16(RecieveBuffer, BLOCK_START + 24)
+	local Value4 = buffer.readu16(RecieveBuffer, BLOCK_START + 26)
+	return Value1, Value2, Value3, Value4
+end
+
+local function WriteEVENT_FireWeapon(Value1: string, Value2: { Origin: Vector3, Direction: Vector3, Time: number, ShotIndex: number, LastShootTime: number }): ()
+	-- Allocate BLOCK: 37 bytes
+	local BLOCK_START = Allocate(37)
+	buffer.writeu8(SendBuffer, BLOCK_START + 0, 1)
 	local Length = #Value1
 	buffer.writeu16(SendBuffer, BLOCK_START + 1, Length)
 	Allocate(Length)
 	buffer.writestring(SendBuffer, SendOffset, Value1, Length)
-	buffer.writef32(SendBuffer, BLOCK_START + 3, Value2)
-	local Vector = Value3
-	buffer.writef32(SendBuffer, BLOCK_START + 7, Vector.X)
-	buffer.writef32(SendBuffer, BLOCK_START + 11, Vector.Y)
-	buffer.writef32(SendBuffer, BLOCK_START + 15, Vector.Z)
-	local Vector = Value4
-	buffer.writef32(SendBuffer, BLOCK_START + 19, Vector.X)
-	buffer.writef32(SendBuffer, BLOCK_START + 23, Vector.Y)
-	buffer.writef32(SendBuffer, BLOCK_START + 27, Vector.Z)
+	local Vector = Value2.Origin
+	buffer.writef32(SendBuffer, BLOCK_START + 3, Vector.X)
+	buffer.writef32(SendBuffer, BLOCK_START + 7, Vector.Y)
+	buffer.writef32(SendBuffer, BLOCK_START + 11, Vector.Z)
+	local Vector = Value2.Direction
+	buffer.writef32(SendBuffer, BLOCK_START + 15, Vector.X)
+	buffer.writef32(SendBuffer, BLOCK_START + 19, Vector.Y)
+	buffer.writef32(SendBuffer, BLOCK_START + 23, Vector.Z)
+	buffer.writef32(SendBuffer, BLOCK_START + 27, Value2.Time)
+	buffer.writeu16(SendBuffer, BLOCK_START + 31, Value2.ShotIndex)
+	buffer.writef32(SendBuffer, BLOCK_START + 33, Value2.LastShootTime)
 end
 
 local function WriteEVENT_ReloadWeapon(Value: string): ()
 	-- Allocate BLOCK: 3 bytes
 	local BLOCK_START = Allocate(3)
-	buffer.writeu8(SendBuffer, BLOCK_START + 0, 1)
+	buffer.writeu8(SendBuffer, BLOCK_START + 0, 2)
 	local Length = #Value
 	buffer.writeu16(SendBuffer, BLOCK_START + 1, Length)
 	Allocate(Length)
 	buffer.writestring(SendBuffer, SendOffset, Value, Length)
+end
+
+local function ReadEVENT_SyncEventState(): (string, number, number)
+	-- Read BLOCK: 5 bytes
+	local BLOCK_START = Read(5)
+	local Length = buffer.readu16(RecieveBuffer, BLOCK_START + 0)
+	local Value1 = buffer.readstring(RecieveBuffer, Read(Length), Length)
+	local Value2 = buffer.readu8(RecieveBuffer, BLOCK_START + 2)
+	local Value3 = buffer.readu16(RecieveBuffer, BLOCK_START + 3)
+	return Value1, Value2, Value3
 end
 
 local function ReadEVENT_RegisterWeapon(): (number)
@@ -197,7 +228,7 @@ end
 local function WriteEVENT_ChangeStateWeapon(Value1: string, Value2: number, Value3: boolean): ()
 	-- Allocate BLOCK: 5 bytes
 	local BLOCK_START = Allocate(5)
-	buffer.writeu8(SendBuffer, BLOCK_START + 0, 2)
+	buffer.writeu8(SendBuffer, BLOCK_START + 0, 3)
 	local Length = #Value1
 	buffer.writeu16(SendBuffer, BLOCK_START + 1, Length)
 	Allocate(Length)
@@ -209,11 +240,17 @@ end
 if not RunService:IsRunning() then
 	local NOOP = function() end
 	local Returns = table.freeze({
+	FireSound = {
+		On = NOOP
+	},
 	FireWeapon = {
 		Fire = NOOP
 	},
 	ReloadWeapon = {
 		Fire = NOOP
+	},
+	SyncEventState = {
+		On = NOOP
 	},
 	RegisterWeapon = {
 		On = NOOP
@@ -264,14 +301,24 @@ Reliable.OnClientEvent:Connect(function(Buffer: buffer, Instances: {Instance})
 		local BLOCK_START = Read(1)
 		local Index = buffer.readu8(RecieveBuffer, BLOCK_START + 0)
 		if Index == 0 then
-			local Value1: number = ReadEVENT_RegisterWeapon()
+			local Value1: string, Value2: number, Value3: number = ReadEVENT_SyncEventState()
 			if Events.Reliable[0] ~= nil then
-				task.spawn(Events.Reliable[0], Value1)
+				task.spawn(Events.Reliable[0], Value1, Value2, Value3)
 			else
 				if #Queue.Reliable[0] > 256 then
+					warn("[Blink]: Event queue of \"SyncEventState\" exceeded 256, did you forget to implement a listener?")
+				end
+				table.insert(Queue.Reliable[0], {Value1, Value2, Value3} :: {any})
+			end
+		elseif Index == 1 then
+			local Value1: number = ReadEVENT_RegisterWeapon()
+			if Events.Reliable[1] ~= nil then
+				task.spawn(Events.Reliable[1], Value1)
+			else
+				if #Queue.Reliable[1] > 256 then
 					warn("[Blink]: Event queue of \"RegisterWeapon\" exceeded 256, did you forget to implement a listener?")
 				end
-				table.insert(Queue.Reliable[0], {Value1} :: {any})
+				table.insert(Queue.Reliable[1], {Value1} :: {any})
 			end
 		end
 	end
@@ -291,6 +338,12 @@ Unreliable.OnClientEvent:Connect(function(Buffer: buffer, Instances: {Instance})
 		-- Read BLOCK: 1 bytes
 		local BLOCK_START = Read(1)
 		local Index = buffer.readu8(RecieveBuffer, BLOCK_START + 0)
+		if Index == 0 then
+			local Value1: Vector3, Value2: Vector3, Value3: number, Value4: number = ReadEVENT_FireSound()
+			if Events.Unreliable[0] ~= nil then
+				task.spawn(Events.Unreliable[0], Value1, Value2, Value3, Value4)
+			end
+		end
 	end
 end)
 
@@ -298,11 +351,21 @@ end)
 local Returns = table.freeze({
 	StepReplication = StepReplication,
 
+	FireSound = {
+		On = function(Listener: (Value1: Vector3, Value2: Vector3, Value3: number, Value4: number) -> ()): () -> ()
+			Events.Unreliable[0] = Listener
+			return function (): ()
+				if Events.Unreliable[0] == Listener then
+					Events.Unreliable[0] = nil
+				end
+			end
+		end
+	},
 	FireWeapon = {
-		Fire = function(Value1: string, Value2: number, Value3: Vector3, Value4: Vector3): ()
+		Fire = function(Value1: string, Value2: { Origin: Vector3, Direction: Vector3, Time: number, ShotIndex: number, LastShootTime: number }): ()
 			local Previous = Save()
 			Load()
-			WriteEVENT_FireWeapon(Value1, Value2, Value3, Value4)
+			WriteEVENT_FireWeapon(Value1, Value2)
 			local Buffer = buffer.create(SendCursor)
 			buffer.copy(Buffer, 0, SendBuffer, 0, SendCursor)
 			Unreliable:FireServer(Buffer, SendInstances)
@@ -320,8 +383,8 @@ local Returns = table.freeze({
 			Load(Previous)
 		end
 	},
-	RegisterWeapon = {
-		On = function(Listener: (Value1: number) -> ()): () -> ()
+	SyncEventState = {
+		On = function(Listener: (Value1: string, Value2: number, Value3: number) -> ()): () -> ()
 			Events.Reliable[0] = Listener
 			for Index, Arguments in Queue.Reliable[0] do
 				task.spawn(Listener, table.unpack(Arguments))
@@ -330,6 +393,20 @@ local Returns = table.freeze({
 			return function (): ()
 				if Events.Reliable[0] == Listener then
 					Events.Reliable[0] = nil
+				end
+			end
+		end
+	},
+	RegisterWeapon = {
+		On = function(Listener: (Value1: number) -> ()): () -> ()
+			Events.Reliable[1] = Listener
+			for Index, Arguments in Queue.Reliable[1] do
+				task.spawn(Listener, table.unpack(Arguments))
+			end
+			Queue.Reliable[1] = {}
+			return function (): ()
+				if Events.Reliable[1] == Listener then
+					Events.Reliable[1] = nil
 				end
 			end
 		end

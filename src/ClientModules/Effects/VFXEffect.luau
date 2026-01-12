@@ -1,30 +1,48 @@
 local module = {}
 
+-- Services
 local ReplicatedStorage = game:GetService('ReplicatedStorage')
-local WeaponInstance = require(ReplicatedStorage.SharedModules.Cores.WeaponInstance)
+local WeaponInstance = require(ReplicatedStorage.ClientModules.Cores.WeaponInstance)
 
+local ObjectCache = require(ReplicatedStorage.SharedModules.Utilities.ObjectCache)
+-- Used VFX
 local Assets = ReplicatedStorage.Assets
-local VFX = Assets.VFX
-local OnHitVFX = VFX.OnHit:GetChildren()
+local VFX = Assets:WaitForChild('VFX')
+local Effects = VFX:WaitForChild('OnHit')
+local OnHitHumanoid = Effects:WaitForChild('OnHitHumanoid')
+local OnHit = Effects:WaitForChild('OnHit')
 
-local OnHit = WeaponInstance.Signals.OnAnyHit
-
-for _,vfx in pairs(OnHitVFX) do
-	vfx.Parent = workspace
-end
-OnHit:Connect(function(hitpart,damage)
-	local target = hitpart
-	if not target.Parent:FindFirstChild("Humanoid") then return false end
+local CachedOnHit = ObjectCache.new(OnHit)
+local CachedOnHitHumanoid = ObjectCache.new(OnHitHumanoid)
+WeaponInstance.Signals.OnAnyHit:Connect(function(ctx,hitdata,damage)
+	if not hitdata then return false end
+	local Position = hitdata.Position
 	
-	local Position = target.Parent.PrimaryPart.Position
-	script["TF2 Critical Hit Sound"]:Play()
-	for _,vfx in pairs(OnHitVFX) do
-		vfx.Position = Position
-		for _,child in pairs(vfx:GetDescendants()) do
-			if child:IsA("ParticleEmitter") then
-				child:Emit(5)
-			end
+	local HitCFrame = CFrame.lookAt(Position, Position + hitdata.Normal)
+	local Part = CachedOnHit:GetPart(HitCFrame)
+	if not Part then return false end
+	local Att = Part:FindFirstChildOfClass('Attachment')
+	if not Att then return false end
+	for _,Child in pairs(Att:GetDescendants()) do
+		if Child:IsA("ParticleEmitter") then
+			local EmitCount = Child:GetAttribute('EmitCount') or 25
+			Child:Emit(EmitCount)
+			
+			task.delay(.1,function()
+				CachedOnHit:ReturnPart(Part)
+			end)
 		end
 	end
+end) 
+-- Used VFX
+local OnFire = VFX:WaitForChild('OnFire')
+local CachedTracers = ObjectCache.new(OnFire:WaitForChild('Part'),10)
+WeaponInstance.Signals.OnAnyFire:Connect(function(origin,direction)
+	local HitCFrame = CFrame.lookAt(origin, origin + direction)
+	local Part = CachedTracers:GetPart(HitCFrame)
+	
+	task.delay(.1,function()
+		CachedTracers:ReturnPart(Part)
+	end)
 end)
 return module

@@ -19,8 +19,8 @@ BulletContext.__index = BulletContext
 	@param config: BulletContextConfig
 	@return BulletContext
 ]]
+local Id = 0
 function BulletContext.new(config: BulletContextConfig): BulletContext
-	assert(config.Weapon, "[BulletContext] Weapon is required")
 	assert(config.Origin, "[BulletContext] Origin is required")
 	assert(config.Direction, "[BulletContext] Direction is required")
 	assert(config.Speed, "[BulletContext] Speed is required")
@@ -28,15 +28,14 @@ function BulletContext.new(config: BulletContextConfig): BulletContext
 	local self = setmetatable({}, BulletContext)
 
 	-- Identity
-	self.Id = HttpService:GenerateGUID(false)
-
-	-- Ownership
-	self.Weapon = config.Weapon
-
+	self.Id = Id
+	Id += 1
+	
 	-- Initial state (immutable)
 	self.Origin = config.Origin
 	self.Direction = config.Direction  -- Always normalized
 	self.Speed = config.Speed
+	self.Callbacks = config.Callbacks
 	self.StartTime = os.clock()
 	self.Bullet = nil
 	-- Runtime state (updated by solver)
@@ -44,7 +43,7 @@ function BulletContext.new(config: BulletContextConfig): BulletContext
 	self.Velocity = self.Direction * self.Speed
 	self.Alive = true
 	self.Length = 0
-	self.LastPoint = Vector3.new()
+	self.Trajectory = {}
 	
 	-- Private solver data (undocumented, internal use only)
 	self.__solverData = config.SolverData
@@ -59,7 +58,7 @@ end
 	@param position: Vector3
 	@param velocity: Vector3
 ]]
-function BulletContext:_UpdateState(currentPos : Vector3,velocity: Vector3,length : number?,lastPoint : number?)
+function BulletContext:_UpdateState(currentPos : Vector3,velocity: Vector3,length : number?)
 	if not self.Alive then return end
 	
 	if currentPos then
@@ -71,9 +70,6 @@ function BulletContext:_UpdateState(currentPos : Vector3,velocity: Vector3,lengt
 	if length then
 		self.Length = length
 	end
-	if lastPoint then
-		self.LastPoint = lastPoint
-	end
 end
 
 --[[
@@ -84,21 +80,6 @@ function BulletContext:Terminate()
 	if not self.Alive then return end
 
 	self.Alive = false
-	-- Ownership
-	self.Weapon = nil
-
-	-- Initial state (immutable)
-	self.Origin = nil
-	self.Direction = nil
-	self.Speed = nil
-	self.StartTime = nil
-	self.Bullet = nil
-	-- Runtime state (updated by solver)
-	self.Position = nil
-	self.Velocity = nil
-	self.Alive = nil
-	self.Length = nil
-	self.LastPoint = nil
 	-- Notify solver to clean up
 	if self.__solverData and typeof(self.__solverData) == "table" then
 		if self.__solverData.Terminate then

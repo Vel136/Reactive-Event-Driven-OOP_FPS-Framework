@@ -1,217 +1,280 @@
--- WeaponController.lua
--- Handles weapon switching, input binding, and viewmodel management
+--!native
+--!optimize 2
 
 local module = {}
+module.__index = module
 
 -- Services
 local RunService = game:GetService('RunService')
 local ReplicatedStorage = game:GetService('ReplicatedStorage')
+local Players = game:GetService('Players')
 
--- Shared Modules
+-- Module Paths
 local Utilities = ReplicatedStorage.SharedModules.Utilities
-local Cores = ReplicatedStorage.SharedModules.Cores
+local Cores = ReplicatedStorage.ClientModules.Cores
 local Configs = ReplicatedStorage.SharedModules.WeaponConfigs
 
 -- Required Modules
 local InputController = require(ReplicatedStorage.ClientModules.Controllers.InputController)
 local WeaponInstance = require(Cores.WeaponInstance)
 local Weapons = require(Configs.Weapons)
-
 local Janitor = require(Utilities.Janitor)
-local t = require(Utilities.TypeCheck)
 local Promise = require(Utilities.Promise)
 local LogService = require(Utilities.LogService)
-local Observer = require(Utilities.Observer)
 local Data = require(script.Data)
-local Signal = require(Utilities.Signal)
--- Weapon Effects
-local WeaponSounds = require(ReplicatedStorage.ClientModules.Controllers.WeaponSounds)
+
 -- Procedural Animations
-local ProcedularAnimations = script.ProcedularAnimations
-local WeaponSway = require(ProcedularAnimations.WeaponSway)
--- Workspace References
+local ProcedularAnimations = require(script.ProcedularAnimations)
+
+-- References
 local Camera = workspace.CurrentCamera
-local Player = game.Players.LocalPlayer
+local Player = Players.LocalPlayer
 local Mouse = Player:GetMouse()
 
 -- Constants
-local SCRIPT_NAME = "WeaponController"
-local VIEWMODEL_UPDATE_TIMEOUT = 5
+local Identity = "[WeaponController]"
 
--- Janitor for cleanup management
-local mainJanitor = Janitor.new()
-local weaponJanitor = Janitor.new()
+-- Janitors
+local MainJanitor = Janitor.new()
+local WeaponJanitor = Janitor.new()
 
-local cachedCharacter = nil
-local cachedHumanoid = nil
+-- Cached references
+local CachedCharacter = nil
+local CachedHumanoid = nil
 
--- Cache character/humanoid
-local function updateCharacterCache()
-	cachedCharacter = Player.Character
-	if cachedCharacter then
-		cachedHumanoid = cachedCharacter:FindFirstChild("Humanoid")
+-- Update character cache
+local function UpdateCharacterCache()
+	CachedCharacter = Player.Character
+	if CachedCharacter then
+		CachedHumanoid = CachedCharacter:FindFirstChild("Humanoid")
+		
+		CachedHumanoid.Running:Connect(function(Speed)
+			if Speed > 0.1 then
+				ProcedularAnimations.WalkBob.SetMoving(true,Speed)
+			else
+				ProcedularAnimations.WalkBob.SetMoving(false)
+			end
+		end)
 	end
 end
 
-Player.CharacterAdded:Connect(updateCharacterCache)
-updateCharacterCache()
+Player.CharacterAdded:Connect(UpdateCharacterCache)
+UpdateCharacterCache()
 
-local function updateViewmodel(dt)
-	if not Data.CurrentViewmodel or not cachedHumanoid then return end
+-- Update viewmodel position and apply sway
+function module:UpdateViewmodel(DeltaTime)
+	if not Data.CurrentViewmodel or not CachedHumanoid then return end
 	if not Data.CurrentViewmodel.Parent or not Data.CurrentViewmodel.PrimaryPart then
 		Data.CurrentViewmodel = nil
 		return
 	end
 
-	WeaponSway.WalkTilt.Update(cachedHumanoid, Camera.CFrame)
-	WeaponSway.MouseSway.Update()
-	WeaponSway.CameraRotationSway.Update(Camera.CFrame)
-	WeaponSway.CameraKick.Update(dt)
-	local weapon = Weapons.GetWeaponInstance(Data.CurrentWeapon)
-	
-	
-	if weapon:IsAiming() then
-		local aimName = weapon.Data.AimAttachment
-			if aimName then
-			local aimPart = Data.CurrentViewmodel:FindFirstChild(aimName, true)
-			if aimPart then
-				WeaponSway.AimingSway.UpdateAiming(Data.CurrentViewmodel,aimPart,dt)
-			end
+	local Weapon = Weapons.GetWeaponInstance(Data.CurrentWeapon)
+
+	-- Update sway systems
+	ProcedularAnimations.WalkTilt.Update(CachedHumanoid, Camera.CFrame)
+	ProcedularAnimations.MouseSway.Update()
+	ProcedularAnimations.RotationalSway.Update(Camera.CFrame)
+	ProcedularAnimations.CameraRecoil.Update(DeltaTime)
+	ProcedularAnimations.WeaponRecoil.Update(DeltaTime)
+	ProcedularAnimations.SprintTilt.Update(DeltaTime)
+	ProcedularAnimations.WalkBob.Update(DeltaTime)
+	ProcedularAnimations.SpringSway.Update(DeltaTime)
+	-- Handle aiming
+	if Weapon:IsAiming() then
+		local AimAttachment : Attachment = Weapon.Data.AimAttachment
+		if AimAttachment then
+			ProcedularAnimations.ProceduralSway.UpdateAiming(
+				Data.CurrentViewmodel.PrimaryPart.CFrame,
+				AimAttachment.WorldCFrame,
+				DeltaTime
+			)
 		end
 	else
-		WeaponSway.AimingSway.UpdateIdle(dt)
+		ProcedularAnimations.ProceduralSway.UpdateIdle(DeltaTime)
 	end
 	
-
+	-- Apply all sway to viewmodel
 	Data.CurrentViewmodel.PrimaryPart.CFrame = Camera.CFrame * 
-		WeaponSway.WalkTilt.GetTilt() *
-		WeaponSway.AimingSway.GetAimCF() *
-		WeaponSway.CameraRotationSway.GetSway() *
-		WeaponSway.MouseSway.GetCombinedSway() *
-		WeaponSway.CameraKick.GetKick()
+		ProcedularAnimations.WalkTilt.GetTilt() *
+		ProcedularAnimations.ProceduralSway.GetAimCF() *
+		ProcedularAnimations.RotationalSway.GetSway() *
+		ProcedularAnimations.MouseSway.GetCombinedSway() *
+		ProcedularAnimations.WeaponRecoil.GetKick() * 
+		ProcedularAnimations.SprintTilt.GetCFrame() *
+		ProcedularAnimations.WalkBob.GetCFrame() *
+		ProcedularAnimations.SpringSway.GetCFrame()
 
-	local muzzle = Data.CurrentViewmodel:FindFirstChild(weapon.Data.BarrelAttachment)
-	if muzzle and muzzle:IsA("Attachment") then
-		Data.CurrentPosition = muzzle.WorldPosition
+	
+	local Muzzle = Weapon.Data.BarrelAttachment
+	if Muzzle and Muzzle:IsA("Attachment") then
+		Data.CurrentPosition = Muzzle.WorldPosition
+	elseif Muzzle and type(Muzzle) == "string" then
+		Muzzle = Data.CurrentViewmodel:FindFirstChild(Weapon.Data.BarrelAttachment)
+		Data.CurrentPosition = Muzzle.WorldPosition
 	end
 end
 
-local function cleanupCurrentWeapon()
-	weaponJanitor:Cleanup()
+-- Clean up current weapon
+function module:CleanUp()
+	WeaponJanitor:Cleanup()
 
 	if Data.CurrentWeapon then
-		local existingModel = Camera:FindFirstChild(Data.CurrentWeapon)
-		if existingModel then
-			existingModel.Parent = ReplicatedStorage.Assets.Viewmodels
+		local ExistingModel = Camera:FindFirstChild(Data.CurrentWeapon)
+		if ExistingModel then
+			ExistingModel.Parent = ReplicatedStorage.Assets.Viewmodels
 		end
 
-		local existingWeapon = Weapons.GetWeaponInstance(Data.CurrentWeapon)
-		if existingWeapon then
-			pcall(function() existingWeapon:Unequip() end)
+		local ExistingWeapon = Weapons.GetWeaponInstance(Data.CurrentWeapon)
+		if ExistingWeapon then
+			pcall(function() 
+				ExistingWeapon:Unequip() 
+			end)
 		end
 	end
 
 	Data.CurrentWeapon = nil
 	Data.CurrentViewmodel = nil
-	Data.CurrentPosition = nil
+	Data.CurrentPosition = nil -- Clear cached position on cleanup
 end
 
--- Equip weapon (returns Promise only because of potential async loading)
-local function equipNewWeapon(weaponName)
-	return Promise.new(function(resolve, reject)
-		local gunData = Weapons.GetWeaponInstance(weaponName)
-		if not gunData or not gunData.Data.Model then
-			reject("Invalid weapon: " .. tostring(weaponName))
+-- Equip weapon
+function module:EquipWeapon(WeaponName)
+	return Promise.new(function(Resolve, Reject)
+		local WeaponInstance = Weapons.GetWeaponInstance(WeaponName)
+		if not WeaponInstance or not WeaponInstance.Data.Model then
+			Reject("Invalid weapon: " .. tostring(WeaponName))
 			return
 		end
 
-		
-		
-		WeaponSounds.BindWeaponSound(gunData)
-		gunData:Equip()
-		
-		local model : Model = gunData.Data.Model
-		model.Parent = Camera
-		Data.CurrentWeapon = weaponName
-		Data.CurrentViewmodel = model
-		
-		weaponJanitor:Add(gunData.Signals.OnFire:Connect(function()
-			WeaponSway.CameraKick.Kick(1)
-		end),"Disconnect")
-		LogService.Print("Equipped: " .. weaponName, SCRIPT_NAME)
-		resolve()
+		WeaponInstance:Equip()
+
+		local Model = WeaponInstance.Data.Model
+		Model.Parent = Camera
+		Data.CurrentWeapon = WeaponName
+		Data.CurrentViewmodel = Model
+
+		local GunKick = WeaponInstance.Data.GunKick
+		local GunSway = WeaponInstance.Data.Sway
+
+		local function ReupdateGun(Aiming)
+			-- Adapt Viewmodel Kick
+			local KickConfiguration = Aiming and GunKick.Aiming or GunKick.Base or {}
+			ProcedularAnimations.WeaponRecoil.SetConfig(KickConfiguration)
+
+			-- Adapt Viewmodel Sway, Idle Time, Aim Time
+			local SwayConfiguration = Aiming and GunSway.Aiming or GunSway.Base or {}
+			SwayConfiguration.AimTime = WeaponInstance.Data.AimTime or .3
+			SwayConfiguration.IdleTime = WeaponInstance.Data.IdleTime or .3
+
+			ProcedularAnimations.ProceduralSway.SetConfig(SwayConfiguration)
+		end
+		ReupdateGun()
+		WeaponJanitor:Add(WeaponInstance.Signals.OnAimChanged:Connect(function(Aiming)
+			ReupdateGun(Aiming)
+		end), "Disconnect")
+
+		-- Connect fire event
+		WeaponJanitor:Add(WeaponInstance.Signals.OnFire:Connect(function()
+			ProcedularAnimations.CameraRecoil.ApplyRecoil()
+
+			local KickParams = WeaponInstance.Data.GunKick
+			if KickParams then
+				ProcedularAnimations.WeaponRecoil.Kick()
+			else
+				ProcedularAnimations.WeaponRecoil.Kick()
+			end
+		end), "Disconnect")
+
+		LogService.Print("Equipped: " .. WeaponName, Identity)
+		Resolve()
 	end):catch()
 end
 
-function module.Init()
-	InputController.Init()
-
+-- Initialize controller
+function module:Initialize()
 	-- Fire handler
-	mainJanitor:Add(InputController.Signals.Fire:Connect(function(isFiring)
-		if not isFiring or not Data.CurrentWeapon then return end
+	MainJanitor:Add(InputController.Signals.Fire:Connect(function(IsFiring)
+		if not IsFiring or not Data.CurrentWeapon then return end
 
-		local weapon = Weapons.GetWeaponInstance(Data.CurrentWeapon)
-		if not weapon or not Data.CurrentPosition then return end
+		local Weapon = Weapons.GetWeaponInstance(Data.CurrentWeapon)
+		if not Weapon or not Data.CurrentPosition then return end
 
-		local origin = Data.CurrentPosition
-		local direction = (Mouse.Hit.Position - origin).Unit
-		
-		weapon:Fire(origin, direction)
+		-- Use cached position instead of reading Muzzle.WorldPosition directly
+		-- This ensures we always use the position from the most recent RenderStepped update
+		local Origin = Data.CurrentPosition
+		local Direction = (Mouse.Hit.Position - Origin).Unit
+
+		Weapon:Fire(Origin, Direction)
+	end), "Disconnect")
+	
+	-- Sprint Handler
+	MainJanitor:Add(InputController.Signals.Sprint:Connect(function(sprinting)
+		ProcedularAnimations.SprintTilt.SetSprinting(sprinting)
+		CachedHumanoid.WalkSpeed = sprinting and 32 or 16
 	end),"Disconnect")
 	
+	print("INITIALIZED")
 	-- Reload handler
-	mainJanitor:Add(InputController.Signals.Reload:Connect(function()
-		local weapon = Weapons.GetWeaponInstance(Data.CurrentWeapon)
-		if not weapon then return end
+	MainJanitor:Add(InputController.Signals.Reload:Connect(function()
+		local Weapon = Weapons.GetWeaponInstance(Data.CurrentWeapon)
+		if not Weapon then return end
 
-		weapon:Reload()
-	end),"Disconnect")
+		Weapon:Reload()
+	end), "Disconnect")
 
 	-- Aim handler
-	mainJanitor:Add(InputController.Signals.Aim:Connect(function(isAiming)
+	MainJanitor:Add(InputController.Signals.Aim:Connect(function(IsAiming)
 		if not Data.CurrentViewmodel then return end
 
-		local weapon = Weapons.GetWeaponInstance(Data.CurrentWeapon)
-		weapon:SetAiming(isAiming)
-	end),"Disconnect")
+		local Weapon = Weapons.GetWeaponInstance(Data.CurrentWeapon)
+		Weapon:SetAiming(IsAiming)
+	end), "Disconnect")
 
-	-- Viewmodel update
-	mainJanitor:Add(RunService.RenderStepped:Connect(updateViewmodel))
+	-- Viewmodel update loop - runs every frame to keep cached position fresh
+	MainJanitor:Add(RunService.RenderStepped:Connect(function(DeltaTime)
+		module:UpdateViewmodel(DeltaTime)
+	end))
 
-	LogService.Print("WeaponController initialized", SCRIPT_NAME)
+	LogService.Print("WeaponController initialized", Identity)
 end
 
-local lastswitch = os.clock()
+-- Switch weapon
+function module.SwitchWeapon(WeaponName)
+	if not WeaponName then
+		module:CleanUp()
+		ProcedularAnimations.WalkTilt.Reset()
+		ProcedularAnimations.MouseSway.Reset()
+		ProcedularAnimations.ProceduralSway.Reset()
+		ProcedularAnimations.MouseSway.Reset()
 
-function module.SwitchWeapon(weaponName)
-	if os.clock() - lastswitch < .2 then
-		return false 
-	end
-	
-	lastswitch = os.clock()
-	if not weaponName then
-		cleanupCurrentWeapon()
-		WeaponSway.WalkTilt.Reset()
-		WeaponSway.MouseSway.Reset()
-		WeaponSway.AimingSway.Reset()
-		WeaponSway.CameraRotationSway.Reset()
-		WeaponSway.CameraKick.Reset()
-		WeaponSounds.UnbindWeaponSound()
 		return Promise.resolve()
 	end
 
-	if Data.CurrentWeapon == weaponName then
+	if Data.CurrentWeapon == WeaponName then
 		return Promise.reject("Already equipped")
 	end
 
-	cleanupCurrentWeapon()
-	return equipNewWeapon(weaponName)
+	module:CleanUp()
+	return module:EquipWeapon(WeaponName)
 end
 
-function module.Cleanup()
-	mainJanitor:Cleanup()
-	weaponJanitor:Cleanup()
-	WeaponSway:Stop()
+-- Singleton instance
+local Instance
+
+local function GetInstance()
+	if not Instance then
+		Instance = setmetatable({}, module)
+		Instance:Initialize()
+	end
+	return Instance
 end
 
-return module
+return setmetatable({}, {
+	__index = function(_, Key)
+		return GetInstance()[Key]
+	end,
+	__newindex = function()
+		error("Cannot modify singleton service", Identity)
+	end
+})

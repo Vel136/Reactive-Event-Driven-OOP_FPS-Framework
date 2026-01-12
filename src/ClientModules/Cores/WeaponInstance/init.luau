@@ -1,4 +1,4 @@
--- init.lua (WeaponInstance Main Module)
+-- ClientWeaponInstance.lua
 --[[
 	Main Gun orchestrator - NOW FULLY SOLVER-AGNOSTIC
 	Uses BulletContext instead of FastCast objects
@@ -9,17 +9,16 @@ local Identity = "[WeaponInstance]"
 -- Services
 local ReplicatedStorage = game:GetService('ReplicatedStorage')
 local RunService = game:GetService('RunService')
+local Players = game:GetService('Players')
 
-local NetworkService = require(ReplicatedStorage.SharedModules.Networking.NetworkService)
 
 -- References
 local Utilities = ReplicatedStorage.SharedModules.Utilities
-local Cores = ReplicatedStorage.SharedModules.Cores
+local Cores = ReplicatedStorage.ClientModules.Cores
 local Controllers = ReplicatedStorage.ClientModules.Controllers
-
+local Networking = ReplicatedStorage.SharedModules.Networking
 
 -- Utilities-modules
-local FastCast = require(Utilities.FastCastRedux)
 local t = require(Utilities:WaitForChild("TypeCheck"))
 local Logger = require(Utilities:WaitForChild("LogService"))
 local Janitor = require(Utilities:WaitForChild("Janitor"))
@@ -30,14 +29,15 @@ local StateManager = require(script.StateManager)
 local AmmoController = require(script.AmmoController)
 local SpreadController = require(script.SpreadController)
 local DamageCalculator = require(script.DamageCalculator)
-local WeaponType = require(script.WeaponType)
+
 
 local Player = game.Players.LocalPlayer
 
 -- Additional Modules
 local BallisticsService = require(Cores.BallisticsService)
 local WeaponAnimator = require(Controllers.WeaponAnimator)
-local Configuration = require(ReplicatedStorage.SharedModules.WeaponConfigs.Configuration)
+local SyncTypes = require(Networking.SyncTypes)
+local NetworkService = require(Networking.NetworkService)
 --[=[
 	@class Gun
 	
@@ -50,6 +50,8 @@ local Configuration = require(ReplicatedStorage.SharedModules.WeaponConfigs.Conf
 local Gun = {}
 Gun.__index = Gun
 
+
+Gun.ActiveGuns = {}
 --[=[
 	@prop Signals table
 	@within Gun
@@ -61,12 +63,17 @@ Gun.__index = Gun
 Gun.Signals = {
 	OnAnyHit = Signal.new(),
 	OnAnyFire = Signal.new(),
+	OnAnyBulletFire = Signal.new(),
+	
+	-- Networking.
+	
+	OnSoundSync = Signal.new()
 }
 --[=[
 	@interface GunSignals
 	@external Signal https://sleitnick.github.io/RbxUtil/api/Signal/
 	@within Gun
-	.OnFire Signal<BulletContext, Vector3, Vector3> -- Fires when weapon shoots
+	.OnFire Signal<Vector3, Vector3> -- Fires when weapon shoots
 	.OnHit Signal<Instance, number, BulletContext> -- Fires when bullet hits
 	.OnReload Signal<> -- Fires when reload begins
 	.OnReloadComplete Signal<> -- Fires when reload completes
@@ -146,12 +153,7 @@ Gun.Signals = {
 	@param UseAnimator boolean? -- Whether to use animator (optional, defaults to false)
 	@return Gun? -- Gun instance or nil if invalid data provided
 ]=]
-function Gun.new(GunData: WeaponType.GunData, UseAnimator: boolean?): WeaponType.Gun
-	if not IsValidData(GunData) then 
-		Logger.Warn(Identity .. " Invalid GunData provided")
-		return nil 
-	end
-
+function Gun.new(GunData, UseAnimator: boolean?)
 	local self = setmetatable({}, Gun)
 
 	-- Core Data
@@ -179,6 +181,7 @@ function Gun.new(GunData: WeaponType.GunData, UseAnimator: boolean?): WeaponType
 	-- Instance Signals
 	self.Signals = {
 		-- Gun-specific signals
+		OnPreFire = Signal.new(),
 		OnFire = Signal.new(),
 		OnHit = Signal.new(),
 		OnDestroyed = Signal.new(),
@@ -193,7 +196,7 @@ function Gun.new(GunData: WeaponType.GunData, UseAnimator: boolean?): WeaponType
 		OnFireChanged = self.StateManager.Signals.OnFireChanged,
 		OnAimChanged = self.StateManager.Signals.OnAimChanged,
 		OnEquipChanged = self.StateManager.Signals.OnEquipChanged,
-
+		OnReloadChanged = self.StateManager.Signals.OnReloadChanged,
 		OnEquipCompleted = Signal.new()
 	}
 
@@ -209,13 +212,16 @@ function Gun.new(GunData: WeaponType.GunData, UseAnimator: boolean?): WeaponType
 	if UseAnimator ~= false then
 		self.AnimationController = WeaponAnimator.new(self, self.Data.Model)
 	end
-
+	
+	Gun.ActiveGuns[GunData.Name] = self
 	return self
 end
 
 function Gun:_SetupNetworking()
-	self._Janitor:Add(self.Signals.OnBulletFire:Connect(function(origin,direction)
-		NetworkService.FireWeapon(self.Data.Name,os.clock(),origin,direction)
+	local States = StateManager.States
+	
+	self._Janitor:Add(self.Signals.OnPreFire:Connect(function(FireData)
+		NetworkService.FireWeapon(self.Data.Name,FireData)
 	end),"Disconnect")
 	
 	self._Janitor:Add(self.Signals.OnReload:Connect(function()
@@ -224,13 +230,76 @@ function Gun:_SetupNetworking()
 	
 	self._Janitor:Add(self.Signals.OnAimChanged:Connect(function(IsAiming)
 		if not NetworkService.ChangeStateWeapon then Logger.Warn("ChangeStateWeapon doesnt exist in NetworkService",Identity) return false end
-		NetworkService.ChangeStateWeapon(self.Data.Name,Configuration.WeaponStates.Aiming,IsAiming)
+		NetworkService.ChangeStateWeapon(self.Data.Name,States.Aim,IsAiming)
 	end),"Disconnect")
 	
 	self._Janitor:Add(self.Signals.OnEquipChanged:Connect(function(IsEquip)
 		if not NetworkService.ChangeStateWeapon then Logger.Warn("ChangeStateWeapon doesnt exist in NetworkService",Identity) return false end
-		NetworkService.ChangeStateWeapon(self.Data.Name,Configuration.WeaponStates.Equip,IsEquip)
+		NetworkService.ChangeStateWeapon(self.Data.Name,States.Equip,IsEquip)
 	end),"Disconnect")
+	
+end
+function Gun.SetupNetworking()
+	NetworkService.OnSyncEventState:Connect(function(WeaponName : string, SyncType, SyncAmount)
+		local Weapon = Gun.ActiveGuns[WeaponName]
+		if not Weapon then 
+			Logger.Warn(string.format("No active weapon '%s' for sync", WeaponName), Identity)
+			return false 
+		end
+
+		-- Validate sync type
+		if not SyncTypes.IsValid(SyncType) then
+			Logger.Warn(string.format("Invalid sync type: %d", SyncType), Identity)
+			return false
+		end
+
+		-- Handle sync
+		if SyncType == SyncTypes.Ammo then
+			if Weapon.ChangeAmmo then
+				Weapon:ChangeAmmo(SyncAmount)
+			else
+				Logger.Warn("Failed to sync ammo - method missing", Identity)
+				return false
+			end
+
+		elseif SyncType == SyncTypes.Reserve then
+			if Weapon.ChangeReserve then
+				Weapon:ChangeReserve(SyncAmount)
+			else
+				Logger.Warn("Failed to sync reserve - method missing", Identity)
+				return false
+			end
+
+		elseif SyncType == SyncTypes.Spread then
+			if Weapon.SpreadController then
+				Weapon.SpreadController.CurrentSpread.Value = SyncAmount
+			else
+				Logger.Warn("Failed to sync spread - controller missing", Identity)
+				return false
+			end
+		elseif SyncType == SyncTypes.ShotIndex then
+			if Weapon.SpreadController then
+				Weapon.SpreadController.ShotIndex = SyncAmount
+			else
+				Logger.Warn("Failed to sync shot_index - controller missing", Identity)
+			end
+		
+		end
+
+		Logger.Print(string.format(
+			"Synced %s: %s",
+			SyncTypes.GetName(SyncType),
+			tostring(SyncAmount)
+			), Identity)
+
+		return true
+	end)
+	
+	NetworkService.OnSoundSync:Connect(function(...)
+		if Gun.Signals.OnSoundSync then
+			Gun.Signals.OnSoundSync:Fire(...)
+		end
+	end)
 end
 --[=[
 	Sets up ballistics configuration including raycast parameters and physics behavior.
@@ -238,7 +307,19 @@ end
 	@private
 ]=]
 function Gun:_SetupBallistics()
-	local behavior = FastCast.newBehavior()
+	
+	local behavior = {
+		RaycastParams = nil,
+		Acceleration = Vector3.new(),
+		MaxDistance = 1000,
+		CanPierceFunction = nil,
+		HighFidelityBehavior = 1,
+		HighFidelitySegmentSize = 0.5,
+		CosmeticBulletTemplate = nil,
+		CosmeticBulletProvider = nil,
+		CosmeticBulletContainer = nil,
+		AutoIgnoreContainer = true
+	}
 	behavior.MaxDistance = self.Data.Damage.Range.Max or 500
 	behavior.Acceleration = self.Data.BulletGravity or Vector3.new(0, -workspace.Gravity, 0)
 
@@ -252,7 +333,7 @@ function Gun:_SetupBallistics()
 	if character then
 		params.FilterDescendantsInstances = {character}
 	end
-
+	behavior.SolverType = self.Data.SolverType
 	behavior.RaycastParams = params
 	self.Ballistics.Behavior = behavior
 end
@@ -267,6 +348,8 @@ function Gun:_SetupControllerLinks()
 	self._Janitor:Add(self.StateManager.Signals.OnAimChanged:Connect(function(isAiming)
 		self.SpreadController:OnAimChanged(isAiming)
 	end))
+	
+
 end
 
 --[=[
@@ -347,8 +430,6 @@ function Gun:Fire(origin: Vector3?, direction: Vector3, useHRP_Position: boolean
 
 	-- Update states
 	self.StateManager:SetShooting(true)
-	self.AmmoController:ConsumeAmmo(self.Data.AmmoDeduction or 1)
-
 	-- Reset shooting state
 	task.defer(function()
 		self.StateManager:SetShooting(false)
@@ -365,9 +446,40 @@ end
 	@param direction Vector3 -- Fire direction vector
 	@return BulletContext -- Bullet simulation context
 ]=]
-function Gun:_FireInternal(origin: Vector3, direction: Vector3)
-	local finalDir = self.SpreadController:ApplySpread(direction)
-	return self:FireBullet(origin, finalDir)
+function Gun:_FireInternal(Origin: Vector3, Direction: Vector3)
+	local BurstCount = self.Data.BurstCount or 1
+	local BurstDelay = self.Data.BurstDelay or 0.04
+	
+	local PelletCount = self.Data.PelletCount or 1
+	
+	local FireData = {
+		Origin = Origin,
+		Direction = Direction,
+		Time = os.clock(),
+		ShotIndex = self.SpreadController:GetShotIndex(),
+		LastShootTime = self.StateManager.LastShootTime,
+	}
+	if self.Signals.OnPreFire then
+		self.Signals.OnPreFire:Fire(FireData)
+	end
+	-- Auto-handle burst/pellets
+	for i = 1, BurstCount do
+		for i = 1,PelletCount do
+			local FinalDirection = self.SpreadController:ApplySpread(Direction)
+			Logger.Print(string.format("Client: Fire in pellet with spread applied direction of: %s, Shot Index of %i, Spread of  %d", tostring(FinalDirection),self.SpreadController:GetShotIndex(),self.SpreadController.CurrentSpread.Value), Identity)
+
+			local context = self:FireBullet(Origin, FinalDirection)
+		end
+
+		self.Signals.OnFire:Fire(Origin, Direction)
+		Gun.Signals.OnAnyFire:Fire(Origin, Direction)
+		self.AmmoController:ConsumeAmmo(1)
+		
+		if i < BurstCount then
+			task.wait(BurstDelay)
+		end
+	end
+	return true
 end
 
 --[=[
@@ -381,16 +493,28 @@ end
 ]=]
 function Gun:FireBullet(origin: Vector3, direction: Vector3)
 	local context = BallisticsService:Fire(
-		self,
-		origin,
-		direction,
-		self.Data.BulletSpeed or 1000,
-		self.Ballistics.Behavior
+		{
+			Origin = origin,
+			Direction = direction,
+			Speed = self.Data.BulletSpeed or 1000,
+			Behavior = self.Ballistics.Behavior,
+			Callbacks = {
+				OnHit = function(context,hitData)
+					self:_OnBulletHit(context, hitData)
+				end,
+
+				OnLengthChanged = function(context,currentPos)
+					self:_OnBulletTravel(context)
+				end,
+
+				OnTerminating = function(context)
+					self:_OnBulletTerminating(context)
+				end,
+			}
+		}
 	)
-	self.Signals.OnBulletFire:Fire(origin,direction)
-	-- Fire signals with context (NOT cast)
-	self.Signals.OnFire:Fire(context, origin, direction)
-	Gun.Signals.OnAnyFire:Fire(context, origin, direction)
+	Gun.Signals.OnAnyBulletFire:Fire(context)
+	self.Signals.OnBulletFire:Fire(context)
 
 	return context
 end
@@ -459,23 +583,20 @@ end
 	@param hitData table -- Hit information from solver
 ]=]
 function Gun:_OnBulletHit(ctx, hitData)
-	if not hitData then return end
-
-	-- Calculate damage using gameplay data (NOT solver objects)
-	local damage = self.DamageCalculator:CalculateTotalDamage(
-		hitData.Distance,
-		ctx,      -- Context contains gameplay data
-		hitData,  -- Solver-agnostic hit info
-		ctx.Velocity,
-		nil       -- No bullet visual object needed
-	)
 
 	-- Fire signals
-	self.Signals.OnHit:Fire(hitData.Instance, damage, ctx)
-	Gun.Signals.OnAnyHit:Fire(hitData.Instance, damage, ctx)
-	Logger.Print(Identity .. " Hit: " .. hitData.Instance.Name .. " Damage: " .. damage)
+	self.Signals.OnHit:Fire(ctx,hitData)
+	Gun.Signals.OnAnyHit:Fire(ctx,hitData)
+
+	Logger.Print("Hit: " .. (hitData and hitData.Instance.Name or ""),Identity)
 end
 
+--[=[
+	Override this to get muzzle position
+]=]
+function Gun.GetCurrentMuzzlePosition()
+	return Vector3.new()
+end
 --[=[
 	Internal callback during bullet travel.
 	
@@ -514,14 +635,28 @@ function Gun:GetState()
 	local stateManagerState = self.StateManager:GetAllStates()
 
 	return {
-		Ammo = ammoState.Ammo,
-		Reserve = ammoState.Reserve,
-		Aiming = stateManagerState.Aiming,
-		Reloading = stateManagerState.Reloading,
-		Shooting = stateManagerState.Shooting,
-		Equipped = stateManagerState.Equipped,
+		Ammo = ammoState.Ammo.Value,
+		Reserve = ammoState.Reserve.Value,
+		Aiming = stateManagerState.Aiming.Value,
+		Reloading = stateManagerState.Reloading.Value,
+		Shooting = stateManagerState.Shooting.Value,
+		Equipped = stateManagerState.Equipped.Value,
 		Spread = self.SpreadController:GetCurrentSpread(),
 	}
+end
+
+function Gun:ChangeAmmo(AmmoValue)
+	if self.AmmoController then
+		self.AmmoController:SetAmmo(AmmoValue)
+	end
+	return true
+end
+
+function Gun:ChangeReserve(ReserveValue)
+	if self.AmmoController then
+		self.AmmoController:SetReserve(ReserveValue)
+	end
+	return true
 end
 
 --[=[
@@ -559,13 +694,6 @@ end
 	@param GunData table -- Weapon data to validate
 	@return boolean -- Whether the data is valid
 ]=]
-function IsValidData(GunData): boolean
-	local succ, err = WeaponType.GunDataCheck(GunData)
-	if not succ then 
-		Logger.Warn(Identity .. err) 
-		return false 
-	end
-	return true
-end
 
+Gun.SetupNetworking()
 return Gun

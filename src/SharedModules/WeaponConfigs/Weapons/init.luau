@@ -2,16 +2,23 @@
 local ReplicatedStorage = game:GetService('ReplicatedStorage')
 local Identity = "[Weapons]"
 -- Required Modules
-local WeaponType = require(ReplicatedStorage.SharedModules.Cores.WeaponInstance.WeaponType)
+
 local Configuration = require(ReplicatedStorage.SharedModules.WeaponConfigs.Configuration)
 local Logger = require(ReplicatedStorage.SharedModules.Utilities.LogService)
+local RunService = game:GetService('RunService')
+local M9  = nil
+local M4A1 = nil
 
-local M9 : WeaponType.Gun = require(script.M9)
-local M4A1 : WeaponType.GunData = require(script.M4A1)
+if RunService:IsClient() then
+	M9 = require(script.M9)
+	M4A1 = require(script.M4A1)
+	SCAR = require(script.SCAR)
+end
 
 local ValidWeapons = {
 	M9 = M9,
-	M4A1 = M4A1
+	M4A1 = M4A1,
+	SCAR = SCAR,
 }
 local module = {}
 

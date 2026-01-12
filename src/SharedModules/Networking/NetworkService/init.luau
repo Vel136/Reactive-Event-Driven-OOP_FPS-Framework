@@ -42,18 +42,37 @@ function module:_Initialize()
 		function module.ReloadWeapon(...)
 			Blink.ReloadWeapon.Fire(...)
 		end
-		
+		function module.HitWeapon(...)
+			Blink.HitWeapon.Fire(...)
+		end
 		function module.ChangeStateWeapon(...)
 			Blink.ChangeStateWeapon.Fire(...)
 		end
+		module.OnSyncEventState = Signal.new()
+		module.OnSoundSync = Signal.new()
+		
+		Blink.FireSound.On(function(...)
+			module.OnSoundSync:Fire(...)
+		end)
+		Blink.SyncEventState.On(function(...)
+			module.OnSyncEventState:Fire(...)
+		end)
 	else
 		module.OnWeaponStateChanged = Signal.new()
 		module.OnWeaponFired = Signal.new()
 		module.OnWeaponReload = Signal.new()
+	
 		Blink.FireWeapon.On(function(Player,...)
 			module.OnWeaponFired:Fire(Player,...)
 		end)
 		
+		function module.SyncEventState(Player,...)
+			Blink.SyncEventState.Fire(Player,...)
+		end
+		
+		function module.SyncSound(...)
+			Blink.FireSound.FireAll(...)
+		end
 		function module.RegisterWeapon(Player,...)
 			Blink.RegisterWeapon.Fire(Player,...)
 		end

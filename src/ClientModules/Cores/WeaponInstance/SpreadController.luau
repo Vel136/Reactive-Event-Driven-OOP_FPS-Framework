@@ -28,7 +28,6 @@ function SpreadController.new(spreadData, stateManager)
 	-- Tracking
 	self.CurrentSpread = Instance.new("NumberValue")
 	self.CurrentSpread.Value = spreadData.Base.Min
-	self.LastShootTime = 0
 
 	-- Pattern tracking
 	self.ShotIndex = 0
@@ -45,7 +44,7 @@ end
 
 function SpreadController:GetCurrentSpread(): number
 	local profile = self:_GetSpreadProfile()
-	local timeSinceLastShot = os.clock() - self.LastShootTime
+	local timeSinceLastShot = os.clock() - self.StateManager.LastShootTime
 
 	-- Not yet in recovery phase
 	if timeSinceLastShot < profile.RecoveryTime then
@@ -134,8 +133,6 @@ function SpreadController:ApplySpread(direction: Vector3): Vector3
 	)
 
 	self.CurrentSpread.Value = newSpread
-	self.LastShootTime = os.clock()
-
 	-- Increment shot counter
 	self.ShotIndex = self.ShotIndex + 1
 
@@ -156,7 +153,6 @@ function SpreadController:ApplySpread(direction: Vector3): Vector3
 
 	return rot:VectorToWorldSpace(localDir).Unit
 end
-
 --[[
 	Manually sets spread value
 ]]

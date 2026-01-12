@@ -1,3 +1,7 @@
+local ReplicatedStorage = game:GetService('ReplicatedStorage')
+local Assets = ReplicatedStorage.Assets
+local Animations = Assets.Animations.M4A1
+local Sounds = Assets.Sounds.M4A1
 local Data = {
 	Name = "M4A1",
 	ID = 2,
@@ -26,28 +30,28 @@ local Data = {
 		},
 	},
 
-	FireMode = "Semi",
-	FireRate = 1200, -- RPM
+	FireMode = "Auto",
+	FireRate = 857, -- RPM
 	BulletSpeed = 2200,
 	BulletGravity = Vector3.new(0,-workspace.Gravity,0),
 
 	Spread = {
 		Base = {
-			Min = 0,
-			Max = 12,
-			RecoveryTime = 2,
-			IncreasePerShot = 2.1,
-			DecreasePerSecond = .6,
+			Min = 0.5,          -- Hip-fire always has some spread
+			Max = 8,            -- M4A1 is accurate even from hip
+			RecoveryTime = 0.15, -- Quick recovery between bursts
+			IncreasePerShot = 1.2, -- Controlled bloom
+			DecreasePerSecond = 4.0, -- Fast recovery (controllable weapon)
 		},
 		Aiming = {
-			Min = 0,
-			Max = 12,
-			RecoveryTime = 2,
-			IncreasePerShot = 1.3,
-			DecreasePerSecond = 1,
+			Min = 0.1,          -- Near-pinpoint accuracy when ADS
+			Max = 2.5,          -- Stays tight even during full-auto
+			RecoveryTime = 0.1,  -- Very quick recovery
+			IncreasePerShot = 0.2, -- Minimal bloom per shot
+			DecreasePerSecond = 3.0, -- Quick recovery
 		},
 	},
-
+	SolverType = "Hitscan",
 	Recoil = {
 		CameraKick = Vector2.new(1.5, 0.5),
 		Pattern = nil,
@@ -71,12 +75,12 @@ local Data = {
 	BarrelAttachment = "Muzzle",
 	AimAttachment = "Aim",
 	ShellEjectAttachment = "Eject",
-	AmmoDeduction = 3,
+
 	-- Animations (AnimationId placeholders)
 	Animations = {
 		Idle = nil,
-		Fire = nil,
-		Reload = nil,
+		Fire = Animations:WaitForChild('Fire'),
+		Reload = Animations:WaitForChild('Reload'),
 		Equip = nil,
 		Unequip = nil,
 		Sprint = nil,
@@ -85,7 +89,7 @@ local Data = {
 
 	-- Sounds
 	Sounds = {
-		Fire = nil,
+		Fire = Sounds:WaitForChild('Fire'),
 		Reload = nil,
 		Equip = nil,
 		Empty = nil,
@@ -95,13 +99,13 @@ local Data = {
 		},
 	},
 
-	-- Special behavior toggles
-	IsShotgun = false,
-	PelletCount = 3,
-	Projectile = false,
+	-- Special Behaviors
+	BurstCount = 1,
+	PelletCount = 1,
+	BurstDelay = .04,
 
-	-- Client-only cosmetic flags
-	MuzzleFlashEnabled = true,
-	ShellEjectEnabled = true,
+	-- Client Behaviors 
+	
+	-- Viewmodel Kick
 }
 return Data

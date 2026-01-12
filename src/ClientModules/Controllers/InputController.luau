@@ -1,4 +1,5 @@
 local module = {}
+module.__index = module
 local ReplicatedStorage = game:GetService('ReplicatedStorage')
 local RunService = game:GetService('RunService')
 local Utilities = ReplicatedStorage.SharedModules.Utilities
@@ -9,22 +10,24 @@ local IAS = require(Utilities.IAS)
 local FireInput = IAS.new("Fire")
 local ReloadInput = IAS.new("Reload")
 local AimInput = IAS.new("Aim")
-
+local SprintInput = IAS.new("Sprint")
 local Inputs = {
 	Fire = FireInput,
 	Reload = ReloadInput,
 	Aim = AimInput,
+	Sprint = SprintInput,
 }
 
 -- Create Signals
 local FireSignal = Signal.new()
 local ReloadSignal = Signal.new()
 local AimSignal = Signal.new()
-
+local SprintSignal = Signal.new()
 local Signals = {
 	Fire = FireSignal,
 	Reload = ReloadSignal,
 	Aim = AimSignal,
+	Sprint = SprintSignal,
 }
 
 module.Signals = Signals
@@ -73,7 +76,7 @@ local function stopAutoFire()
 	FireSignal:Fire(false) -- Signal that we stopped firing
 end
 
-function module.Init()
+function module:_Initialize()
 	-- Configure Firing input
 	FireInput:AddBind(Enum.KeyCode.MouseLeftButton) -- Mouse left click
 	FireInput:SetHold(true) -- Hold mode is essential for auto fire
@@ -81,11 +84,14 @@ function module.Init()
 	-- Configure Reload Input
 	ReloadInput:AddBind(Enum.KeyCode.R)
 	ReloadInput:SetHold(false) -- Toggle mode not needed, just tap to reload
-
+	
+	-- Configure Sprint Input
+	SprintInput:AddBind(Enum.KeyCode.LeftShift)
+	SprintInput:SetHold(true)
 	-- Configure Aim Input
 	AimInput:AddBind(Enum.KeyCode.MouseRightButton) -- Mouse right click
 	AimInput:SetHold(true) -- Hold to aim
-
+	
 	-- Fire Input Logic
 	FireInput.Activated:Connect(function(active, wasPressed)
 		if active and wasPressed then
@@ -108,7 +114,15 @@ function module.Init()
 			end
 		end
 	end)
-
+	
+	-- Sprint Input Logic
+	SprintInput.Activated:Connect(function(active,wasPressed)
+		if active and wasPressed then
+			SprintSignal:Fire(true)
+		elseif not active and not wasPressed then
+			SprintSignal:Fire(false)
+		end
+	end)
 	-- Reload Input Logic
 	ReloadInput.Activated:Connect(function(active, wasPressed)
 		if active and wasPressed then
@@ -191,4 +205,22 @@ function module.Cleanup()
 	AimSignal:DisconnectAll()
 end
 
-return module
+local instance
+
+local function GetInstance()
+	if not instance then
+		instance = setmetatable({}, module)
+		instance:_Initialize()
+	end
+	return instance
+end
+
+export type InputController = typeof(setmetatable({},module))
+return setmetatable({}, {
+	__index = function(_, key)
+		return GetInstance()[key]
+	end,
+	__newindex = function()
+		error("Cannot modify singleton service","[InputController]")
+	end
+}) :: InputController

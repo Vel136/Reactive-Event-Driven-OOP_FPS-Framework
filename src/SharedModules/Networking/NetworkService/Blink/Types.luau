@@ -146,6 +146,7 @@ local Queue: any = {
     Unreliable = table.create(256)
 }
 
+export type FireData = { Origin: Vector3, Direction: Vector3, Time: number, ShotIndex: number, LastShootTime: number }
 
 
 

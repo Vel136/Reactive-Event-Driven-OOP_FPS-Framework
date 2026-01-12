@@ -2,7 +2,7 @@
 local SCRIPT_NAME = "[WeaponAnimator]"
 
 local ReplicatedStorage = game:GetService('ReplicatedStorage')
-local WeaponType = require(ReplicatedStorage.SharedModules.Cores.WeaponInstance.WeaponType)
+
 local Utilities = ReplicatedStorage.SharedModules.Utilities
 local Janitor = require(Utilities.Janitor)
 local Logger = require(Utilities.LogService)
@@ -23,11 +23,11 @@ WeaponAnimator.Animations = Anims
 
 --[[
 	Creates a new WeaponAnimator instance
-	@param weapon - Gun instance (WeaponType.Gun)
+	@param weapon 
 	@param viewmodel - The viewmodel Model in workspace
 	@return WeaponAnimator instance or nil if invalid
 ]]
-function WeaponAnimator.new(weapon: WeaponType.Gun, viewmodel: Model)
+function WeaponAnimator.new(weapon, viewmodel: Model)
 	if not weapon then
 		Logger.Warn(SCRIPT_NAME .. " Invalid weapon provided")
 		return nil
@@ -160,7 +160,8 @@ function WeaponAnimator:_BindSignals()
 
 	-- Reload signal
 	if self.Tracks[Anims.Reload] then
-		self._Janitor:Add(self.Weapon.Signals.OnReload:Connect(function()
+		self._Janitor:Add(self.Weapon.Signals.OnReload:Connect(function(Reload)
+			
 			self:PlayAnimation(Anims.Reload)
 		end))
 	end
@@ -210,7 +211,6 @@ function WeaponAnimator:PlayAnimation(animEnum: number, fadeTime: number?)
 	
 	track:Play()
 	
-
 	-- Update state
 	self.CurrentState = animEnum
 	self.CurrentPriority = priority
